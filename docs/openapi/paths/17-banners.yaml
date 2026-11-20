@@ -1,0 +1,335 @@
+paths:
+  /api/v1/banners:
+    get:
+      tags: [Catalog]
+      operationId: listHomeBanners
+      summary: Home page slider banners (active, within their dates, by sortOrder, at most 5)
+      description: Public. Sent with Cache-Control "public, max-age=60".
+      responses:
+        '200':
+          description: The banners to show.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    maxItems: 5
+                    items:
+                      $ref: '#/components/schemas/PublicBanner'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/v1/admin/banners:
+    get:
+      tags: [Admin]
+      operationId: adminListBanners
+      summary: All banners, including inactive and scheduled ones
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Every banner by sortOrder.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminBanner'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      operationId: adminCreateBanner
+      summary: Create a banner (multipart; audited as banner.created)
+      description: >-
+        One JPG, PNG or WebP photo in "image" (type read from the content), max 3 MB, at least 800 x 267;
+        center-cropped to 1600 x 534 and re-encoded as WebP without metadata. Text fields are plain text.
+        href must be an internal path ("/..." but not "//..."). An empty optional field means null.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BannerFields'
+                - type: object
+                  required: [image, titleEn, titleBn, href]
+                  properties:
+                    image:
+                      type: string
+                      format: binary
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBannerResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          description: The photo is larger than 3 MB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: The photo is too small.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/v1/admin/banners/reorder:
+    patch:
+      tags: [Admin]
+      operationId: adminReorderBanners
+      summary: Set the order of all banners (audited as banner.reordered)
+      description: ids must name every banner exactly once; the position becomes sortOrder (0, 1, 2, ...).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: All banners in their new order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminBanner'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/banners/{id}:
+    patch:
+      tags: [Admin]
+      operationId: adminUpdateBanner
+      summary: Update fields and/or replace the photo (audited as banner.updated)
+      description: Multipart (or JSON when no photo is sent). Same rules as create; every field is optional.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BannerFields'
+                - type: object
+                  properties:
+                    image:
+                      type: string
+                      format: binary
+      responses:
+        '200':
+          description: The updated banner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBannerResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          description: The photo is larger than 3 MB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: The photo is too small.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      tags: [Admin]
+      operationId: adminDeleteBanner
+      summary: Delete a banner and its photo files (audited as banner.deleted)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  schemas:
+    BannerFields:
+      type: object
+      properties:
+        titleEn:
+          type: string
+          maxLength: 80
+        titleBn:
+          type: string
+          maxLength: 80
+        textEn:
+          type: string
+          maxLength: 160
+        textBn:
+          type: string
+          maxLength: 160
+        ctaEn:
+          type: string
+          maxLength: 30
+        ctaBn:
+          type: string
+          maxLength: 30
+        href:
+          type: string
+          maxLength: 200
+          pattern: '^/(?![/\\])[A-Za-z0-9\-._~/?#=&%+]*$'
+          example: /markets
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        isActive:
+          type: boolean
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+    PublicBanner:
+      type: object
+      required: [id, imageUrl, titleEn, titleBn, textEn, textBn, ctaEn, ctaBn, href]
+      properties:
+        id:
+          type: string
+          format: uuid
+        imageUrl:
+          type: string
+          description: Our own API origin, /media/<uuid>.webp (1600 x 534)
+        titleEn:
+          type: string
+        titleBn:
+          type: string
+        textEn:
+          type: string
+          nullable: true
+        textBn:
+          type: string
+          nullable: true
+        ctaEn:
+          type: string
+          nullable: true
+        ctaBn:
+          type: string
+          nullable: true
+        href:
+          type: string
+    AdminBanner:
+      allOf:
+        - $ref: '#/components/schemas/PublicBanner'
+        - type: object
+          required: [thumbUrl, sortOrder, isActive, startsAt, endsAt, createdAt, updatedAt]
+          properties:
+            thumbUrl:
+              type: string
+            sortOrder:
+              type: integer
+            isActive:
+              type: boolean
+            startsAt:
+              type: string
+              format: date-time
+              nullable: true
+            endsAt:
+              type: string
+              format: date-time
+              nullable: true
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+    AdminBannerResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AdminBanner'

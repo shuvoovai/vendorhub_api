@@ -21,3 +21,17 @@ export function receiveFileField(field) {
 
 // markets, products, shop logo and banner
 export const receivePhoto = receiveFileField('image');
+
+// Home page banners: one optional photo in "image" (max 3 MB) plus up to 12 short text fields.
+const bannerUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 3 * 1024 * 1024, files: 1, fields: 12, fieldSize: 1024, parts: 13 },
+});
+export function receiveBannerForm(req, res, next) {
+  bannerUpload.single('image')(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') return next(new AppError(413, 'The photo is larger than 3 MB'));
+    if (err.name === 'MulterError') return next(new AppError(400, 'Send at most one photo in the multipart field "image"'));
+    return next(err);
+  });
+}

@@ -52,6 +52,7 @@ async function clean() {
   await prisma.$transaction([
         prisma.idempotencyKey.deleteMany(),
         prisma.emailVerificationToken.deleteMany(),
+        prisma.banner.deleteMany(),
         prisma.image.deleteMany(),
     // shop photos first: they point at shops and at uploads
     prisma.shopPhoto.deleteMany(),

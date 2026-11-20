@@ -705,3 +705,23 @@ model EmailVerificationToken {
 
   @@index([userId])
 }
+// Home page slider. The image is one of our /media WebP files (the key; URLs are built, never stored).
+model Banner {
+  id        String    @id @default(uuid())
+  imageKey  String    @unique
+  titleEn   String
+  titleBn   String
+  textEn    String?
+  textBn    String?
+  ctaEn     String?
+  ctaBn     String?
+  href      String // internal path only, e.g. "/markets"
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([isActive, sortOrder])
+}
