@@ -1,0 +1,450 @@
+import { Prisma } from '@prisma/client';
+import { prisma } from '../../lib/prisma.js';
+import { AppError } from '../../lib/errors.js';
+import { presentImage } from '../../lib/storage.js';
+import { mergeSocialLinks, presentSocialLinks, sameSocialLinks } from '../../lib/socialLinks.js';
+const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+async function uniqueShopSlug(name) {
+  const base = slugify(name) || 'shop';
+  let slug = base;
+  let n = 1;
+  while (await prisma.shop.findUnique({ where: { slug } })) {
+    n += 1;
+    slug = `${base}-${n}`;
+  }
+  return slug;
+}
+
+async function findActiveShop(slug) {
+  const shop = await prisma.shop.findFirst({ where: { slug, isActive: true } });
+  if (!shop) throw new AppError(404, 'Shop not found');
+  return shop;
+}
+
+const round1 = (n) => (n === null || n === undefined ? null : Math.round(n * 10) / 10);
+
+// ---------- Markets ----------
+
+export async function listMarkets({ district, q } = {}) {
+  const rows = await prisma.market.findMany({
+    where: {
+      ...(district && { district }),
+      // Prisma does not escape "%" and "_" in contains, so they are escaped here (normal characters)
+      ...(q && { name: { contains: escapeLike(q), mode: 'insensitive' } }),
+    },
+    orderBy: { name: 'asc' },
+    include: { image: true, _count: { select: { shops: { where: { isActive: true } } } } },
+  });
+  return rows.map((m) => ({
+    id: m.id,
+    name: m.name,
+    slug: m.slug,
+    city: m.city,
+    district: m.district,
+    address: m.address,
+    shopCount: m._count.shops,
+    image: presentImage(m.image),
+  }));
+}
+
+export async function getMarket(slug) {
+  const market = await prisma.market.findUnique({
+    where: { slug },
+    include: {
+      image: true,
+      shops: {
+        where: { isActive: true },
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logoUrl: true,
+          levelFloor: true,
+          shopNumber: true,
+          addressLine: true,
+          verificationLevel: true,
+          photos: { where: { isCover: true }, take: 1, select: { url: true, kind: true, verifiedAt: true } },
+        },
+      },
+    },
+  });
+  if (!market) throw new AppError(404, 'Market not found');
+  // each shop card gets its cover photo (or null)
+  return {
+      ...market,
+    imageId: undefined, // internal reference, not part of the answer
+    image: presentImage(market.image),
+    shops: market.shops.map(({ photos, ...s }) => ({
+      ...s,
+      coverPhoto: photos[0] ? { url: photos[0].url, kind: photos[0].kind, verified: photos[0].verifiedAt !== null } : null,
+    })),
+  };
+}
+// ---------- Storefront ----------
+
+export async function getShop(slug, userId) {
+  const shop = await prisma.shop.findFirst({
+    where: { slug, isActive: true },
+    include: {
+      market: { select: { id: true, name: true, slug: true } },
+      _count: { select: { followers: true, staff: true, photos: true } },
+      photos: { where: { isCover: true }, take: 1, select: { url: true, kind: true, verifiedAt: true } },
+    },
+  });
+  if (!shop) throw new AppError(404, 'Shop not found');
+
+  const [rating, ordersFulfilled, activeBargains, follow] = await Promise.all([
+    prisma.review.aggregate({
+      where: { shopId: shop.id, type: 'SHOP_TRUST' },
+      _avg: { rating: true },
+      _count: { rating: true },
+    }),
+    prisma.subOrder.count({ where: { shopId: shop.id, status: 'COMPLETED' } }),
+    prisma.shopListing.count({
+      where: {
+        shopId: shop.id,
+        isActive: true,
+        bargainEnabled: true,
+        availability: { not: 'OUT_OF_STOCK' },
+      },
+    }),
+    userId
+      ? prisma.shopFollow.findUnique({ where: { shopId_userId: { shopId: shop.id, userId } } })
+      : null,
+  ]);
+
+  const cover = shop.photos[0];
+  return {
+    id: shop.id,
+    name: shop.name,
+    slug: shop.slug,
+    description: shop.description,
+    logoUrl: shop.logoUrl,
+    bannerUrl: shop.bannerUrl,
+    coverPhoto: cover ? { url: cover.url, kind: cover.kind, verified: cover.verifiedAt !== null } : null,
+    photoCount: shop._count.photos,
+    address: {
+      levelFloor: shop.levelFloor,
+      shopNumber: shop.shopNumber,
+      addressLine: shop.addressLine,
+      latitude: shop.latitude,
+      longitude: shop.longitude,
+    },
+    // the shop's own public contact (never the owner's personal phone or email)
+    phone: shop.phone,
+    whatsapp: shop.whatsapp,
+    socialLinks: presentSocialLinks(shop.socialLinks),
+    market: shop.market,
+    verification: { level: shop.verificationLevel, lastAuditedAt: shop.lastAuditedAt },
+    supportsDelivery: shop.supportsDelivery,
+    supportsPickup: shop.supportsPickup,
+    returnPolicy: { text: shop.returnPolicy, windowDays: shop.returnWindowDays },
+    stats: {
+      ratingAverage: round1(rating._avg.rating),
+      reviewCount: rating._count.rating,
+      ordersFulfilled,
+      avgResponseMins: shop.avgResponseMins,
+      followers: shop._count.followers,
+      activeBargains,
+    },
+    staffCount: shop._count.staff,
+    isFollowing: Boolean(follow),
+  };
+}
+
+export async function getShopProducts(slug, query) {
+  const shop = await findActiveShop(slug);
+  const { q, category, sort, bargainOnly, availableOnly, page, limit } = query;
+
+  const where = {
+    shopId: shop.id,
+    isActive: true,
+    product: {
+      isActive: true,
+      ...(q && { title: { contains: q, mode: 'insensitive' } }),
+      ...(category && { category: { OR: [{ slug: category }, { parent: { slug: category } }] } }),
+    },
+    ...(bargainOnly && { bargainEnabled: true }),
+    ...(availableOnly && { availability: { not: 'OUT_OF_STOCK' } }),
+  };
+
+  const orderBy = {
+    newest: { createdAt: 'desc' },
+    price_asc: { price: 'asc' },
+    price_desc: { price: 'desc' },
+  }[sort];
+
+  const [total, rows] = await Promise.all([
+    prisma.shopListing.count({ where }),
+    prisma.shopListing.findMany({
+      where,
+      orderBy,
+      skip: (page - 1) * limit,
+      take: limit,
+      include: {
+        product: {
+          select: {
+            id: true,
+            slug: true,
+            title: true,
+            images: true,
+            msrp: true,
+            brand: { select: { name: true } },
+          },
+        },
+      },
+    }),
+  ]);
+
+  const items = rows.map((l) => ({
+    listingId: l.id,
+    product: {
+      id: l.product.id,
+      slug: l.product.slug,
+      title: l.product.title,
+      brand: l.product.brand?.name ?? null,
+      image: l.product.images[0] ?? null,
+    },
+    price: l.price,
+    msrp: l.product.msrp,
+    availability: l.availability,
+    bargainEnabled: l.bargainEnabled,
+  }));
+
+  return { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+}
+
+export async function getShopCategories(slug) {
+  const shop = await findActiveShop(slug);
+  const rows = await prisma.shopListing.findMany({
+    where: { shopId: shop.id, isActive: true, product: { isActive: true } },
+    select: { product: { select: { category: { select: { id: true, name: true, slug: true } } } } },
+  });
+  const counts = new Map();
+  for (const r of rows) {
+    const c = r.product.category;
+    const entry = counts.get(c.id) ?? { ...c, productCount: 0 };
+    entry.productCount += 1;
+    counts.set(c.id, entry);
+  }
+  return [...counts.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getShopReviews(slug, query) {
+  const shop = await findActiveShop(slug);
+  const { type, page, limit } = query;
+  const where = { shopId: shop.id, ...(type && { type }) };
+
+  const [total, rows] = await Promise.all([
+    prisma.review.count({ where }),
+    prisma.review.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+      include: {
+        user: { select: { name: true } },
+        product: { select: { title: true, slug: true } },
+      },
+    }),
+  ]);
+
+  const items = rows.map((r) => ({
+    id: r.id,
+    type: r.type,
+    rating: r.rating,
+    comment: r.comment,
+    createdAt: r.createdAt,
+    reviewer: r.user.name,
+    product: r.product,
+  }));
+  return { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+}
+
+// ---------- Follow ----------
+
+const followerCount = (shopId) => prisma.shopFollow.count({ where: { shopId } });
+
+export async function followShop(slug, userId) {
+  const shop = await findActiveShop(slug);
+  await prisma.shopFollow.upsert({
+    where: { shopId_userId: { shopId: shop.id, userId } },
+    update: {},
+    create: { shopId: shop.id, userId },
+  });
+  return { following: true, followers: await followerCount(shop.id) };
+}
+
+export async function unfollowShop(slug, userId) {
+  const shop = await findActiveShop(slug);
+  await prisma.shopFollow.deleteMany({ where: { shopId: shop.id, userId } });
+  return { following: false, followers: await followerCount(shop.id) };
+}
+
+// ---------- Create shop (shop owner) ----------
+
+export async function createShop(user, input) {
+  if (input.marketId) {
+    const market = await prisma.market.findUnique({ where: { id: input.marketId } });
+    if (!market) throw new AppError(404, 'Market not found');
+  }
+  const slug = await uniqueShopSlug(input.name);
+  const { socialLinks, ...data } = input;
+  const links = mergeSocialLinks(null, socialLinks ?? {}); // only the links that were really sent
+  // starts as UNVERIFIED; the admin verification flow (Days 16-17) raises the level
+  const shop = await prisma.shop.create({
+    data: { ...data, ...(Object.keys(links).length > 0 && { socialLinks: links }), slug, ownerId: user.id },
+  });
+  return shopRecord(shop);
+}
+
+// The stored shop for its owner; the links always in the same shape as the public answers.
+const shopRecord = (shop) => ({ ...shop, socialLinks: presentSocialLinks(shop.socialLinks) });
+
+//update shop (shop owner or admin)
+export async function updateShop(user, shopId, input) {
+  const shop = await prisma.shop.findUnique({
+    where: { id: shopId },
+    select: { ownerId: true, phone: true, whatsapp: true, socialLinks: true },
+  });
+  if (!shop) throw new AppError(404, 'Shop not found');
+  if (user.role !== 'ADMIN' && shop.ownerId !== user.id) {
+    throw new AppError(403, 'Only the shop owner can edit the shop profile');
+  }
+  if (input.marketId) {
+    const market = await prisma.market.findUnique({ where: { id: input.marketId } });
+    if (!market) throw new AppError(404, 'Market not found');
+  }
+
+  const { socialLinks, ...data } = input;
+  // which contact fields really change: the audit log gets their names, never their values
+  const changed = [];
+  if (data.phone !== undefined && data.phone !== shop.phone) changed.push('phone');
+  if (data.whatsapp !== undefined && data.whatsapp !== shop.whatsapp) changed.push('whatsapp');
+  if (socialLinks !== undefined) {
+    const merged = mergeSocialLinks(shop.socialLinks, socialLinks);
+    data.socialLinks = Object.keys(merged).length > 0 ? merged : Prisma.DbNull;
+    if (!sameSocialLinks(shop.socialLinks, merged)) changed.push('socialLinks');
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.shop.update({ where: { id: shopId }, data });
+    if (changed.length > 0) {
+      await tx.auditLog.create({
+        data: { actorId: user.id, action: 'shop.contact_updated', entityType: 'Shop', entityId: shopId, meta: { fields: changed } },
+      });
+    }
+    return row;
+  });
+  return shopRecord(updated);
+}
+
+
+
+// ---------- public shop search ----------
+
+// "%" and "_" (and the escape character itself) in a search text are normal characters, not wildcards.
+const escapeLike = (text) => text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+
+// Public search by shop name. Filtering, ranking, counting and paging happen in the database;
+// every user value is a parameter. Only public card fields are returned: the shop's own phone,
+// WhatsApp and links are public, but never the owner (or the owner's phone or email), stock
+// numbers, offer minimums or verification internals.
+export async function searchShops({ q, marketId, verifiedOnly, page, limit }) {
+  const conds = [Prisma.sql`s."isActive" = true`];
+  if (marketId) conds.push(Prisma.sql`s."marketId" = ${marketId}`);
+  if (verifiedOnly) conds.push(Prisma.sql`s."verificationLevel" <> 'UNVERIFIED'`);
+
+  // With q: names that START with q first, then names that only contain it.
+  // Inside each group (and without q): most trusted first, then name A-Z, then id (stable pages).
+  let orderBy = Prisma.sql`s."verificationLevel" DESC, s.name ASC, s.id ASC`;
+  if (q) {
+    const escaped = escapeLike(q);
+    conds.push(Prisma.sql`s.name ILIKE ${`%${escaped}%`} ESCAPE '\\'`);
+    orderBy = Prisma.sql`CASE WHEN s.name ILIKE ${`${escaped}%`} ESCAPE '\\' THEN 0 ELSE 1 END ASC, ${orderBy}`;
+  }
+  const where = Prisma.join(conds, ' AND ');
+
+  const offset = (page - 1) * limit;
+  const rows = await prisma.$queryRaw`
+    SELECT s.id, COUNT(*) OVER() AS total
+    FROM "Shop" s
+    WHERE ${where}
+    ORDER BY ${orderBy}
+    LIMIT ${limit} OFFSET ${offset}`;
+
+  // An empty page past the end has no row to carry the total, so it needs one extra count.
+  let total = 0;
+  if (rows.length > 0) total = Number(rows[0].total);
+  else if (page > 1) {
+    const counted = await prisma.$queryRaw`SELECT COUNT(*) AS total FROM "Shop" s WHERE ${where}`;
+    total = Number(counted[0].total);
+  }
+
+  // Card data for this page only: shop fields, cover photo, shop-trust rating, active listings.
+  const ids = rows.map((r) => r.id);
+  const [shops, ratings, listingCounts] = ids.length
+    ? await Promise.all([
+        prisma.shop.findMany({
+          where: { id: { in: ids } },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logoUrl: true,
+            levelFloor: true,
+            shopNumber: true,
+            phone: true,
+            whatsapp: true,
+            socialLinks: true,
+            verificationLevel: true,
+            market: { select: { id: true, name: true, slug: true } },
+            photos: { where: { isCover: true }, take: 1, select: { url: true, kind: true, verifiedAt: true } },
+          },
+        }),
+        prisma.review.groupBy({
+          by: ['shopId'],
+          where: { shopId: { in: ids }, type: 'SHOP_TRUST' },
+          _avg: { rating: true },
+          _count: { rating: true },
+        }),
+        prisma.shopListing.groupBy({
+          by: ['shopId'],
+          where: { shopId: { in: ids }, isActive: true },
+          _count: { _all: true },
+        }),
+      ])
+    : [[], [], []];
+
+  const shopOf = new Map(shops.map((s) => [s.id, s]));
+  const ratingOf = new Map(ratings.map((r) => [r.shopId, r]));
+  const countOf = new Map(listingCounts.map((c) => [c.shopId, c._count._all]));
+
+  // Built field by field, in the SQL order, so nothing extra can slip into the answer.
+  const items = ids.map((id) => {
+    const s = shopOf.get(id);
+    const cover = s.photos[0];
+    const rating = ratingOf.get(id);
+    return {
+      id: s.id,
+      name: s.name,
+      slug: s.slug,
+      logoUrl: s.logoUrl,
+      levelFloor: s.levelFloor,
+      shopNumber: s.shopNumber,
+      phone: s.phone,
+      whatsapp: s.whatsapp,
+      socialLinks: presentSocialLinks(s.socialLinks),
+      verificationLevel: s.verificationLevel,
+      market: s.market,
+      coverPhoto: cover ? { url: cover.url, kind: cover.kind, verified: cover.verifiedAt !== null } : null,
+      ratingAverage: rating ? round1(rating._avg.rating) : null,
+      reviewCount: rating ? rating._count.rating : 0,
+      productCount: countOf.get(id) ?? 0,
+    };
+  });
+
+  return { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+}

@@ -1,0 +1,11 @@
+node_modules
+.env
+*.log
+uploads/
+logs/
+models-cache/
+*.dump
+.env.*
+!.env.example
+!.env.production.example
+.claude/settings.local.json

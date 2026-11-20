@@ -1,0 +1,707 @@
+// Vendors Hub — Prisma schema (PostgreSQL)
+// Money is stored as integer paisa-free BDT (whole taka) -> use Int. Switch to Decimal if you need fractions.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────── ENUMS ─────────────
+
+enum UserRole {
+  CUSTOMER
+  SHOP_OWNER
+  SHOP_STAFF
+  ADMIN
+}
+
+enum VerificationLevel {
+  UNVERIFIED
+  DOCUMENTS_VERIFIED
+  BUSINESS_VERIFIED
+  PHYSICAL_SHOP_VERIFIED
+  TRUSTED_VENDOR
+}
+
+enum VerificationStatus {
+  PENDING
+  AUTO_FLAGGED
+  APPROVED
+  CORRECTION_REQUESTED
+  REJECTED
+  REVOKED
+}
+
+enum DocumentType {
+  TRADE_LICENSE
+  NID
+  SHOP_PHOTO
+  OTHER
+}
+
+enum AvailabilityState {
+  IN_STOCK
+  LIMITED
+  AVAILABLE
+  OUT_OF_STOCK
+}
+
+enum BargainStatus {
+  AWAITING_SHOP // customer offered, shop must respond
+  COUNTERED // shop countered, customer must respond
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum OfferActor {
+  CUSTOMER
+  SHOP
+  SYSTEM
+}
+
+enum DeliveryMethod {
+  STORE_PICKUP
+  VENDOR_DELIVERY
+}
+
+enum PaymentMethod {
+  ONLINE
+  PAY_AT_STORE
+  CASH_ON_DELIVERY
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum OrderStatus {
+  PLACED
+  CONFIRMED
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+enum ReviewType {
+  PRODUCT
+  SHOP_TRUST
+}
+
+enum ProductSource {
+  ADMIN
+  SHOP
+}
+
+// ───────────── USERS & AUTH ─────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String?  @unique
+  phone        String?  @unique
+  passwordHash String
+  name         String
+  avatarUrl    String?
+  role         UserRole @default(CUSTOMER)
+  isActive     Boolean  @default(true)
+  emailVerifiedAt DateTime? @default(now()) // new registrations set null until the link is opened
+  
+  deletionRequestedAt    DateTime?
+  deletionScheduledFor   DateTime? // set = account is waiting to be deleted (grace period)
+  deletionReason         String?
+  deletionReminderSentAt DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens       RefreshToken[]
+  ownedShops          Shop[]               @relation("ShopOwner")
+  staffOf             ShopStaff[]
+  addresses           Address[]
+  cart                Cart?
+  checkouts           CheckoutSession[]
+  bargains            Bargain[]
+  reviews             Review[]
+  follows             ShopFollow[]
+  auditLogs           AuditLog[]
+  passwordResetTokens PasswordResetToken[]
+  notifications       Notification[]
+  fileUploads         FileUpload[]
+  returnRequests      ReturnRequest[]
+  returnMessages      ReturnMessage[]
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Address {
+  id        String  @id @default(uuid())
+  userId    String
+  label     String?
+  line1     String
+  area      String?
+  city      String  @default("Dhaka")
+  phone     String
+  isDefault Boolean @default(false)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ───────────── MARKETS & SHOPS ─────────────
+
+model Market {
+  id        String  @id @default(uuid())
+  name      String
+  slug      String  @unique
+  city      String
+  district  String // one key from src/lib/districts.js (the 64 districts), validated by the API
+  address   String?
+  latitude  Float?
+  longitude Float?
+  shops     Shop[]
+  imageId   String? @unique
+  image     Image?  @relation(fields: [imageId], references: [id], onDelete: SetNull)
+
+  @@index([district])
+}
+
+model Shop {
+  id                String            @id @default(uuid())
+  ownerId           String
+  marketId          String?
+  name              String
+  slug              String            @unique
+  description       String?
+  logoUrl           String?
+  bannerUrl         String?
+  logoImageId       String?           @unique
+  bannerImageId     String?           @unique
+  hiddenForOwnerDeletion Boolean @default(false) // hidden because its owner asked to delete the account
+  logoImage         Image?            @relation("ShopLogo", fields: [logoImageId], references: [id], onDelete: SetNull)
+  bannerImage       Image?            @relation("ShopBanner", fields: [bannerImageId], references: [id], onDelete: SetNull)
+  levelFloor        String? // "Level 3"
+  shopNumber        String? // "Shop 42"
+  addressLine       String
+  phone             String? // public shop phone, BD mobile 01XXXXXXXXX (required for new shops)
+  whatsapp          String? // same format
+  socialLinks       Json? // { facebook, instagram, tiktok, youtube, website }: validated https links
+  latitude          Float?
+  longitude         Float?
+  verificationLevel VerificationLevel @default(UNVERIFIED)
+  lastAuditedAt     DateTime?
+  avgResponseMins   Int?
+  isActive          Boolean           @default(true)
+  supportsDelivery  Boolean           @default(true)
+  supportsPickup    Boolean           @default(true)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  owner            User               @relation("ShopOwner", fields: [ownerId], references: [id])
+  market           Market?            @relation(fields: [marketId], references: [id])
+  staff            ShopStaff[]
+  verifications    ShopVerification[]
+  listings         ShopListing[]
+  createdProducts  Product[]          @relation("ShopCreatedProducts")
+  subOrders        SubOrder[]
+  reviews          Review[]
+  followers        ShopFollow[]
+  photos           ShopPhoto[]
+  returnPolicy     String?
+  returnWindowDays Int                @default(7)
+
+  @@index([marketId])
+  @@index([verificationLevel])
+    @@index([name(ops: raw("gin_trgm_ops"))], type: Gin) // fast ILIKE search on shop names (pg_trgm)
+}
+
+model ShopStaff {
+  shopId String
+  userId String
+  title  String?
+  shop   Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([shopId, userId])
+}
+
+model ShopFollow {
+  shopId    String
+  userId    String
+  createdAt DateTime @default(now())
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([shopId, userId])
+}
+
+// ───────────── VERIFICATION / AUDIT (Admin portal) ─────────────
+
+model ShopVerification {
+  id              String             @id @default(uuid())
+  shopId          String
+  targetLevel     VerificationLevel
+  status          VerificationStatus @default(PENDING)
+  precheckScore   Int? // 0-100
+  precheckDetails Json? // {tradeLicenseOcr:true, geoMatch:true, nidFaceMatch:"pending"}
+  adminNotes      String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  submittedAt     DateTime           @default(now())
+
+  shop      Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  documents VerificationDocument[]
+
+  @@index([status])
+  @@index([shopId])
+}
+
+model VerificationDocument {
+  id             String           @id @default(uuid())
+  verificationId String
+  type           DocumentType
+  fileUrl        String
+  needsReupload  Boolean          @default(false)
+  reviewedAt     DateTime?
+  verification   ShopVerification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+
+  @@index([verificationId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  action     String // "shop.verification.approved"
+  entityType String
+  entityId   String
+  meta       Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+}
+
+// ───────────── CATALOG (hybrid: canonical product + shop listing) ─────────────
+
+model Category {
+  id       String     @id @default(uuid())
+  name     String
+  slug     String     @unique
+  parentId String?
+  virtualTryOn Boolean    @default(false) // admin switch: customers may try products of this category on
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+  
+}
+
+model Brand {
+  id       String    @id @default(uuid())
+  name     String    @unique
+  products Product[]
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  brandId     String?
+  categoryId  String
+  title       String
+  slug        String   @unique
+  description String?
+  specs       Json? // {ram:"8GB", storage:"128GB", color:"Awesome Navy"}
+  msrp        Int?
+  images      String[]
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  source          ProductSource @default(ADMIN)
+  createdByShopId String?
+  lockedAt        DateTime? // set when an admin edits or merges the product: the creating shop can no longer change it
+    titleEmbedding  Unsupported("vector(512)")? // CLIP text fingerprint of the title (visual search)
+  createdByShop   Shop?         @relation("ShopCreatedProducts", fields: [createdByShopId], references: [id], onDelete: SetNull)
+  photos          Image[]
+
+  brand    Brand?        @relation(fields: [brandId], references: [id])
+  category Category      @relation(fields: [categoryId], references: [id])
+  listings ShopListing[]
+  reviews  Review[]
+
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([source])
+  @@index([createdByShopId, createdAt])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin) // fast ILIKE '%text%' search on titles (pg_trgm)
+}
+
+model ShopListing {
+  id              String            @id @default(uuid())
+  shopId          String
+  productId       String
+  price           Int
+  availability    AvailabilityState @default(AVAILABLE)
+  stockQty        Int? // internal only — UI never shows numbers
+  bargainEnabled  Boolean           @default(false)
+  minOfferPercent Int               @default(92) // lowest acceptable offer as % of price
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  shop       Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product    Product     @relation(fields: [productId], references: [id])
+  bargains   Bargain[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@unique([shopId, productId])
+  @@index([productId, price])
+}
+
+// ───────────── BARGAINING ─────────────
+
+model Bargain {
+  id           String        @id @default(uuid())
+  listingId    String
+  customerId   String
+  status       BargainStatus @default(AWAITING_SHOP)
+  listPrice    Int // snapshot at start
+  currentOffer Int
+  agreedPrice  Int?
+  expiresAt    DateTime
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  listing   ShopListing    @relation(fields: [listingId], references: [id])
+  customer  User           @relation(fields: [customerId], references: [id])
+  events    BargainEvent[]
+  cartItems CartItem[]
+
+  @@index([listingId, status])
+  @@index([customerId])
+  @@index([expiresAt])
+}
+
+model BargainEvent {
+  id        String     @id @default(uuid())
+  bargainId String
+  actor     OfferActor
+  amount    Int?
+  note      String?
+  createdAt DateTime   @default(now())
+  bargain   Bargain    @relation(fields: [bargainId], references: [id], onDelete: Cascade)
+
+  @@index([bargainId])
+}
+
+// ───────────── CART ─────────────
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String     @unique
+  updatedAt DateTime   @updatedAt
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+}
+
+model CartItem {
+  id        String      @id @default(uuid())
+  cartId    String
+  listingId String
+  bargainId String? // set when an accepted bargain price applies
+  quantity  Int         @default(1)
+  cart      Cart        @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  listing   ShopListing @relation(fields: [listingId], references: [id])
+  bargain   Bargain?    @relation(fields: [bargainId], references: [id])
+
+  @@unique([cartId, listingId])
+}
+
+// ───────────── SPLIT CHECKOUT / ORDERS ─────────────
+
+model CheckoutSession {
+  id          String     @id @default(uuid())
+  userId      String
+  totalAmount Int
+  createdAt   DateTime   @default(now())
+  user        User       @relation(fields: [userId], references: [id])
+  subOrders   SubOrder[]
+
+  @@index([userId])
+}
+
+model SubOrder {
+  id              String         @id @default(uuid())
+  orderNumber     String         @unique
+  checkoutId      String
+  shopId          String
+  deliveryMethod  DeliveryMethod
+  deliveryAddress String?
+  deliveryFee     Int            @default(0)
+  subtotal        Int
+  total           Int
+  paymentMethod   PaymentMethod
+  paymentStatus   PaymentStatus  @default(PENDING)
+  status          OrderStatus    @default(PLACED)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  checkout    CheckoutSession @relation(fields: [checkoutId], references: [id])
+  shop        Shop            @relation(fields: [shopId], references: [id])
+  items       OrderItem[]
+  payments    Payment[]
+  completedAt DateTime?
+  returns     ReturnRequest[]
+
+  @@index([shopId, status])
+  @@index([checkoutId])
+}
+
+model OrderItem {
+  id         String      @id @default(uuid())
+  subOrderId String
+  listingId  String
+  title      String // snapshot
+  unitPrice  Int // snapshot (bargained price if applicable)
+  quantity   Int
+  bargained  Boolean     @default(false)
+  subOrder   SubOrder    @relation(fields: [subOrderId], references: [id], onDelete: Cascade)
+  listing    ShopListing @relation(fields: [listingId], references: [id])
+
+  @@index([subOrderId])
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  subOrderId  String
+  provider    String // "sslcommerz" | "bkash" | "manual"
+  providerRef String?
+  amount      Int
+  status      PaymentStatus @default(PENDING)
+  rawPayload  Json?
+  createdAt   DateTime      @default(now())
+  subOrder    SubOrder      @relation(fields: [subOrderId], references: [id])
+
+  @@index([subOrderId])
+}
+
+// ───────────── REVIEWS (two separate kinds) ─────────────
+
+model Review {
+  id        String     @id @default(uuid())
+  type      ReviewType
+  userId    String
+  shopId    String
+  productId String? // only for PRODUCT reviews
+  rating    Int
+  comment   String?
+  createdAt DateTime   @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  shop    Shop     @relation(fields: [shopId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@index([shopId, type])
+  @@index([productId])
+}
+
+// ───────────── PHASE 3 ─────────────
+
+enum FilePurpose {
+  PUBLIC_IMAGE
+  PRIVATE_DOCUMENT
+}
+
+enum ReturnReason {
+  DEFECTIVE
+  WRONG_ITEM
+  NOT_AS_DESCRIBED
+  CHANGED_MIND
+  OTHER
+}
+
+enum ReturnStatus {
+  REQUESTED // waiting for the shop
+  REJECTED // the shop said no; the customer may escalate
+  ESCALATED // waiting for an admin
+  REFUNDED
+  CLOSED // an admin rejected it
+}
+
+enum MessageAuthorRole {
+  CUSTOMER
+  SHOP
+  ADMIN
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+model FileUpload {
+  id           String      @id @default(uuid())
+  ownerId      String
+  purpose      FilePurpose
+  originalName String
+  storedName   String      @unique
+  mimeType     String
+  size         Int
+  createdAt    DateTime    @default(now())
+  owner        User        @relation(fields: [ownerId], references: [id])
+  shopPhotos   ShopPhoto[]
+
+  @@index([ownerId])
+}
+
+model ReturnRequest {
+  id             String          @id @default(uuid())
+  subOrderId     String
+  customerId     String
+  reason         ReturnReason
+  description    String
+  status         ReturnStatus    @default(REQUESTED)
+  resolutionNote String?
+  resolvedById   String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  subOrder       SubOrder        @relation(fields: [subOrderId], references: [id])
+  customer       User            @relation(fields: [customerId], references: [id])
+  messages       ReturnMessage[]
+
+  @@index([subOrderId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model ReturnMessage {
+  id            String            @id @default(uuid())
+  returnId      String
+  authorId      String
+  authorRole    MessageAuthorRole
+  body          String
+  createdAt     DateTime          @default(now())
+  returnRequest ReturnRequest     @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  author        User              @relation(fields: [authorId], references: [id])
+
+  @@index([returnId])
+}
+
+// ───────────── SHOP PHOTOS ─────────────
+
+enum ShopPhotoKind {
+  EXTERIOR // the shop front from outside
+  SIGNBOARD // the name board (the strongest proof)
+  INTERIOR // inside the shop
+  DISPLAY // shelves, counter, products on display
+  PANORAMA_360 // a 360-degree photo (2:1), shown in a panorama viewer
+  OTHER
+}
+
+model ShopPhoto {
+  id           String        @id @default(uuid())
+  shopId       String
+  fileId       String
+  url          String
+  kind         ShopPhotoKind
+  caption      String?
+  sortOrder    Int           @default(0)
+  isCover      Boolean       @default(false)
+  verifiedAt   DateTime? // set by an admin who checked the photo against the real shop
+  verifiedById String?
+  createdAt    DateTime      @default(now())
+  shop         Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  file         FileUpload    @relation(fields: [fileId], references: [id])
+
+  @@index([shopId, sortOrder])
+}
+
+
+// A processed public image: files <key>.webp and <key>-thumb.webp in the media folder.
+// No URL or file name is stored; URLs are built from the key.
+model Image {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  width     Int
+  height    Int
+  purpose   String // e.g. "MARKET"
+  ownerId   String?
+  createdAt DateTime @default(now())
+  market    Market?
+  productId String?
+  sortOrder Int      @default(0)
+    embedding  Unsupported("vector(512)")? // CLIP image fingerprint (product photos)
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  shopLogo   Shop?    @relation("ShopLogo")
+  shopBanner Shop?    @relation("ShopBanner")
+  @@index([productId, sortOrder])
+}
+
+enum IdempotencyStatus {
+  IN_PROGRESS
+  DONE
+}
+
+// One entry per user and Idempotency-Key (24 hours): a repeated checkout returns the stored answer.
+model IdempotencyKey {
+  id             String            @id @default(uuid())
+  userId         String
+  key            String
+  requestHash    String // SHA-256 of the request body (keys sorted)
+  status         IdempotencyStatus @default(IN_PROGRESS)
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime          @default(now())
+
+  @@unique([userId, key])
+  @@index([createdAt])
+}
+
+
+
+// Email verification links: only the SHA-256 of the token is stored; 24 hours; single use.
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}

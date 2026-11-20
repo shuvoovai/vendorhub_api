@@ -1,0 +1,108 @@
+import { z } from 'zod';
+import { SOCIAL_KEYS, checkSocialLink } from '../../lib/socialLinks.js';
+import { districtKey } from '../../lib/districts.js';
+
+const bool = z.enum(['true', 'false']).transform((v) => v === 'true');
+
+const pagination = {
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(12),
+};
+
+// GET /markets: optional filters; the answer stays a plain array. An empty q means no filter.
+export const marketsQuery = z.object({
+  district: districtKey.optional(),
+  q: z.string().trim().max(100).optional(),
+});
+
+export const shopProductsQuery = z.object({
+  q: z.string().trim().min(1).optional(),
+  category: z.string().trim().min(1).optional(), // category slug (includes children)
+  sort: z.enum(['newest', 'price_asc', 'price_desc']).default('newest'),
+  bargainOnly: bool.optional(),
+  availableOnly: bool.optional(),
+  ...pagination,
+});
+
+export const shopReviewsQuery = z.object({
+  type: z.enum(['PRODUCT', 'SHOP_TRUST']).optional(),
+  ...pagination,
+});
+
+// ---------- shop contact: phone, WhatsApp and public links ----------
+const bdMobile = z.string().trim().regex(/^01\d{9}$/, 'Use a Bangladesh mobile number like 01712345678');
+
+// One link: the rules live in src/lib/socialLinks.js; the stored value is the normalised https link.
+const link = (key) =>
+  z
+    .string()
+    .transform((value, ctx) => {
+      const result = checkSocialLink(key, value);
+      if (!result.ok) {
+        ctx.issues.push({ code: 'custom', message: result.message, input: value });
+        return z.NEVER;
+      }
+      return result.url;
+    })
+    .nullable()
+    .optional();
+
+// Strict: an unknown key is rejected (fixed message, the key is not repeated). null removes a link.
+const socialLinks = z.strictObject(
+  Object.fromEntries(SOCIAL_KEYS.map((key) => [key, link(key)])),
+  { error: 'socialLinks accepts only facebook, instagram, tiktok, youtube and website' },
+);
+
+export const createShopSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  phone: bdMobile,
+  whatsapp: bdMobile.optional(),
+  socialLinks: socialLinks.optional(),
+  description: z.string().trim().max(1000).optional(),
+  marketId: z.string().uuid().optional(),
+  levelFloor: z.string().trim().max(30).optional(),
+  shopNumber: z.string().trim().max(30).optional(),
+  addressLine: z.string().trim().min(5).max(200),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  supportsDelivery: z.boolean().default(true),
+  supportsPickup: z.boolean().default(true),
+  returnPolicy: z.string().trim().max(2000).nullable().optional(),
+  returnWindowDays: z.number().int().min(0).max(60).optional(),
+});
+
+//Only the owner or an admin can edit the shop profile. Staff can manage listings but not the profile. The schema uses .strict(), so a body containing verificationLevel, ownerId, or slug is rejected with a 400 instead of silently ignored. That prevents an owner from verifying their own shop.
+
+export const updateShopSchema = z
+  .object({
+    name: z.string().trim().min(2).max(100).optional(),
+    phone: bdMobile.optional(), // can be changed, never removed
+    whatsapp: bdMobile.nullable().optional(),
+    socialLinks: socialLinks.nullable().optional(), // null removes every link
+    description: z.string().trim().max(1000).nullable().optional(),
+    // logoUrl: z.string().url().nullable().optional(),
+    // bannerUrl: z.string().url().nullable().optional(),
+    marketId: z.string().uuid().nullable().optional(),
+    levelFloor: z.string().trim().max(30).nullable().optional(),
+    shopNumber: z.string().trim().max(30).nullable().optional(),
+    addressLine: z.string().trim().min(5).max(200).optional(),
+    latitude: z.number().min(-90).max(90).nullable().optional(),
+    longitude: z.number().min(-180).max(180).nullable().optional(),
+    supportsDelivery: z.boolean().optional(),
+    supportsPickup: z.boolean().optional(),
+    returnPolicy: z.string().trim().max(2000).nullable().optional(),
+    returnWindowDays: z.number().int().min(0).max(60).optional(),
+  })
+  .strict()
+  .refine((o) => Object.keys(o).length > 0, { message: 'Provide at least one field to update' });
+
+
+  
+// GET /shops: public shop search by name; most trusted shops first.
+export const shopSearchQuery = z.object({
+  q: z.string().trim().min(1).max(100).optional(),
+  marketId: z.string().uuid().optional(),
+  verifiedOnly: bool.optional(), // true = verificationLevel is not UNVERIFIED
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(20).default(10),
+});
