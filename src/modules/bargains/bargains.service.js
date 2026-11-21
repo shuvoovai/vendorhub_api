@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
+import { loadViewer, visibleStockQty } from '../../lib/stockVisibility.js';
 import { AppError } from '../../lib/errors.js';
 import { env } from '../../config/env.js';
 import { assertShopAccess } from '../../lib/shopAccess.js';
@@ -42,7 +43,8 @@ const isYourTurn = (status, actor) =>
 const effectiveStatus = (b) =>
   LIVE.includes(b.status) && b.expiresAt < new Date() ? 'EXPIRED' : b.status;
 
-function format(b, actor) {
+// viewer (from loadViewer) decides whether the listing's stockQty is sent
+function format(b, actor, viewer = null) {
   const status = effectiveStatus(b);
   return {
     id: b.id,
@@ -63,7 +65,12 @@ function format(b, actor) {
       image: b.listing.product.images[0] ?? null,
     },
     shop: { id: b.listing.shop.id, name: b.listing.shop.name, slug: b.listing.shop.slug },
-    listing: { id: b.listing.id, price: b.listing.price, availability: b.listing.availability },
+    listing: {
+      id: b.listing.id,
+      price: b.listing.price,
+      availability: b.listing.availability,
+      stockQty: visibleStockQty(viewer, b.listing),
+    },
     ...(actor === 'SHOP' && { customer: { name: b.customer.name } }),
     events: b.events.map((e) => ({
       id: e.id,
@@ -75,8 +82,8 @@ function format(b, actor) {
   };
 }
 
-const summarize = (b, actor) => {
-  const { events, ...rest } = format(b, actor);
+const summarize = (b, actor, viewer) => {
+  const { events, ...rest } = format(b, actor, viewer);
   return rest;
 };
 
@@ -173,7 +180,7 @@ const assertTurn = (b, actor) => {
 
 export async function getBargain(user, id) {
   const { b, actor } = await loadForActor(user, id);
-  return format(b, actor);
+  return format(b, actor, await loadViewer(user));
 }
 
 // Everything the "Make an Offer" modal needs before the customer types a number.
@@ -276,6 +283,7 @@ export async function createBargain(user, { listingId, offer }) {
 export async function listMyBargains(user, { status, page, limit }) {
   await expireStaleBargains();
   const where = { customerId: user.id, ...(status && { status }) };
+  const viewer = await loadViewer(user);
   const [total, rows] = await Promise.all([
     prisma.bargain.count({ where }),
     prisma.bargain.findMany({
@@ -287,7 +295,7 @@ export async function listMyBargains(user, { status, page, limit }) {
     }),
   ]);
   return {
-    items: rows.map((b) => summarize(b, 'CUSTOMER')),
+    items: rows.map((b) => summarize(b, 'CUSTOMER', viewer)),
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 }
@@ -297,6 +305,7 @@ export async function listShopBargains(user, shopId, { status, page, limit }) {
   await assertShopAccess(user, shopId);
   await expireStaleBargains();
   const where = { listing: { shopId }, ...(status !== 'ALL' && { status }) };
+  const viewer = await loadViewer(user);
   const [total, rows] = await Promise.all([
     prisma.bargain.count({ where }),
     prisma.bargain.findMany({
@@ -308,7 +317,7 @@ export async function listShopBargains(user, shopId, { status, page, limit }) {
     }),
   ]);
   return {
-    items: rows.map((b) => summarize(b, 'SHOP')),
+    items: rows.map((b) => summarize(b, 'SHOP', viewer)),
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 }

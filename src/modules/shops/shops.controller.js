@@ -1,3 +1,4 @@
+import { loadViewer, markViewerDependent } from '../../lib/stockVisibility.js';
 import * as shopService from './shops.service.js';
 
 export const markets = async (req, res) => {
@@ -13,7 +14,8 @@ export const shop = async (req, res) => {
 };
 
 export const shopProducts = async (req, res) => {
-  const { items, pagination } = await shopService.getShopProducts(req.params.slug, req.validated);
+  const { items, restricted, pagination } = await shopService.getShopProducts(req.params.slug, req.validated, await loadViewer(req.user));
+  markViewerDependent(res, restricted);
   res.json({ success: true, data: items, meta: { pagination } });
 };
 

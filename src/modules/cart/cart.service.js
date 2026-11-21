@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { runningDeals, unitPriceFor } from '../../lib/deals.js';
+import { loadViewer, visibleStockQty } from '../../lib/stockVisibility.js';
 
 const MAX_QTY_PER_LINE = 10;
 
@@ -66,6 +67,7 @@ export async function getCart(userId) {
   let itemCount = 0;
   let hasProblem = false;
   const deals = await runningDeals(prisma, (cart?.items ?? []).map((i) => i.listingId));
+  const viewer = cart?.items.length ? await loadViewer({ id: userId }) : null;
 
   for (const item of cart?.items ?? []) {
     const l = item.listing;
@@ -111,6 +113,7 @@ export async function getCart(userId) {
       unitPrice,
       lineTotal,
       availability: l.availability,
+      stockQty: visibleStockQty(viewer, l), // null unless the listing's stockVisibility allows this user
       bargainApplied,
       dealApplied,
       dealEndsAt: dealApplied ? deal.endsAt : null,

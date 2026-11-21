@@ -69,6 +69,8 @@ paths:
                   type: integer
                   minimum: 0
                   nullable: true
+                stockVisibility:
+                  $ref: '#/components/schemas/StockVisibility'
                 bargainEnabled:
                   type: boolean
                   default: false
@@ -129,6 +131,8 @@ paths:
                   type: integer
                   minimum: 0
                   nullable: true
+                stockVisibility:
+                  $ref: '#/components/schemas/StockVisibility'
                 bargainEnabled:
                   type: boolean
                 minOfferPercent:
@@ -1654,7 +1658,7 @@ components:
           description: Best a PRIVATE_DOCUMENT upload link (POST /api/v1/uploads).
     ShopListing:
       type: object
-      description: The shop's own view of a listing (includes stockQty and minOfferPercent, never shown publicly).
+      description: The shop's own view of a listing (always includes stockQty, stockVisibility and minOfferPercent).
       additionalProperties: true
       properties:
         id:
@@ -1667,6 +1671,8 @@ components:
         stockQty:
           type: integer
           nullable: true
+        stockVisibility:
+          $ref: '#/components/schemas/StockVisibility'
         bargainEnabled:
           type: boolean
         minOfferPercent:
@@ -1690,7 +1696,8 @@ components:
         The cart grouped by shop, with live prices, problems flagged per item, and whether checkout is possible.
         Each item's unitPrice is computed by the server: the lowest of the listing price, a running flash deal
         (dealApplied true, dealEndsAt set; only while deal units are left for that quantity) and an accepted bargain
-        (bargainApplied). Checkout charges the same price.
+        (bargainApplied). Checkout charges the same price. Each item also has stockQty: the number only when the
+        listing's stockVisibility allows this user, else null; a quantity above the real stock gets 409 without the number.
       additionalProperties: true
       properties:
         shops:
@@ -1773,6 +1780,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Order'
+    StockVisibility:
+      type: string
+      enum: [PUBLIC, VENDORS, HIDDEN]
+      default: HIDDEN
+      description: "Who may see the stock number: PUBLIC (everyone), VENDORS (admins and teams of verified shops), HIDDEN (admins and this shop's team). Default HIDDEN."
     Bargain:
       type: object
       description: A negotiation. secondsLeft and yourTurn drive the countdown and the buttons.
@@ -1797,6 +1809,21 @@ components:
           type: integer
         yourTurn:
           type: boolean
+        listing:
+          type: object
+          required: [id, price, availability, stockQty]
+          properties:
+            id:
+              type: string
+              format: uuid
+            price:
+              type: integer
+            availability:
+              $ref: '#/components/schemas/Availability'
+            stockQty:
+              type: integer
+              nullable: true
+              description: The stock number, or null when it is not counted or this viewer may not see it (stockVisibility). Availability is always sent.
     BargainResponse:
       type: object
       properties:

@@ -15,7 +15,7 @@ router.get('/markets/:slug', c.market);
 router.post('/shops', authenticate, requireRole('SHOP_OWNER', 'ADMIN'), requireVerifiedEmail, validate(createShopSchema), c.createShop);
 router.get('/shops', validateQuery(shopSearchQuery), c.searchShops);
 router.get('/shops/:slug', optionalAuth, c.shop);
-router.get('/shops/:slug/products', validateQuery(shopProductsQuery), c.shopProducts);
+router.get('/shops/:slug/products', optionalAuth, validateQuery(shopProductsQuery), c.shopProducts);
 router.get('/shops/:slug/categories', c.shopCategories);
 router.get('/shops/:slug/reviews', validateQuery(shopReviewsQuery), c.shopReviews);
 router.post('/shops/:slug/follow', authenticate, c.follow);

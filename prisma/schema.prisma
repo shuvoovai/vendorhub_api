@@ -19,6 +19,13 @@ enum UserRole {
   ADMIN
 }
 
+// Who may see a listing's stock number (availability is always public)
+enum StockVisibility {
+  PUBLIC // everyone
+  VENDORS // admins and the team of any verified shop
+  HIDDEN // admins and this listing's own shop team
+}
+
 enum VerificationLevel {
   UNVERIFIED
   DOCUMENTS_VERIFIED
@@ -357,7 +364,8 @@ model ShopListing {
   productId       String
   price           Int
   availability    AvailabilityState @default(AVAILABLE)
-  stockQty        Int? // internal only — UI never shows numbers
+  stockQty        Int? // shown only as allowed by stockVisibility (src/lib/stockVisibility.js)
+  stockVisibility StockVisibility   @default(HIDDEN)
   bargainEnabled  Boolean           @default(false)
   minOfferPercent Int               @default(92) // lowest acceptable offer as % of price
   isActive        Boolean           @default(true)

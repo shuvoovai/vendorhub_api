@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { thumbFor } from '../../lib/storage.js';
 import { runningDeals } from '../../lib/deals.js';
+import { visibleStockQty } from '../../lib/stockVisibility.js';
 const AVAILABILITY_RANK = { IN_STOCK: 4, AVAILABLE: 3, LIMITED: 2, OUT_OF_STOCK: 1 };
 
 // The "best" availability among a product's listings (used on product cards).
@@ -193,7 +194,8 @@ export async function listProducts(query) {
   return { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
 }
 
-export async function getProduct(slug, listingId) {
+// viewer: from loadViewer(); decides whether each listing's stockQty is sent (else null)
+export async function getProduct(slug, listingId, viewer = null) {
   const product = await prisma.product.findFirst({
     where: { slug, isActive: true },
     include: {
@@ -255,6 +257,7 @@ export async function getProduct(slug, listingId) {
     price: l.price,
     deal: dealOf(l), // a running flash deal: the cart and checkout charge dealPrice
     availability: l.availability,
+    stockQty: visibleStockQty(viewer, l),
     bargainEnabled: l.bargainEnabled,
     discountPercent: product.msrp ? Math.round((1 - l.price / product.msrp) * 100) : null,
     shop: { ...l.shop, rating: ratings.get(l.shop.id) ?? { average: null, count: 0 } },
@@ -286,11 +289,12 @@ export async function getProduct(slug, listingId) {
     selectedListing: selected ? toListing(selected) : null,
     otherListings: others.map(toListing),
     otherShopsCount: others.length,
+    restricted: product.listings, // raw rows for the cache decision; removed by the controller
   };
 }
 
 // Compare table: every shop's listing for this product, cheapest first
-export async function getProductListings(slug) {
-  const { selectedListing, otherListings } = await getProduct(slug);
-  return [selectedListing, ...otherListings].filter(Boolean).sort((a, b) => a.price - b.price);
+export async function getProductListings(slug, viewer = null) {
+  const { selectedListing, otherListings, restricted } = await getProduct(slug, undefined, viewer);
+  return { items: [selectedListing, ...otherListings].filter(Boolean).sort((a, b) => a.price - b.price), restricted };
 }

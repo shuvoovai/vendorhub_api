@@ -15,6 +15,7 @@ const listingInput = z
   .object({
     price: z.number().int().min(1),
     stockQty: z.number().int().min(0).max(100000).nullable().optional(),
+    stockVisibility: z.enum(['PUBLIC', 'VENDORS', 'HIDDEN']).optional(),
     availability: availability.optional(),
     bargainEnabled: z.boolean().default(false),
     minOfferPercent: z.number().int().min(50).max(100).default(92),

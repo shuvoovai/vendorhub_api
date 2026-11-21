@@ -9,6 +9,18 @@ export function deriveAvailability(stockQty) {
   return 'IN_STOCK';
 }
 
+// Who may see the stock number is a shop decision worth tracing: audited on every change.
+const auditVisibility = (user, listing, from) =>
+  prisma.auditLog.create({
+    data: {
+      actorId: user.id,
+      action: 'listing.stock_visibility_changed',
+      entityType: 'ShopListing',
+      entityId: listing.id,
+      meta: { shopId: listing.shopId, from, to: listing.stockVisibility },
+    },
+  });
+
 const productSelect = {
   select: { id: true, slug: true, title: true, msrp: true, images: true },
 };
@@ -40,20 +52,24 @@ export async function createListing(user, shopId, input) {
     availability: input.availability ?? deriveAvailability(input.stockQty),
     bargainEnabled: input.bargainEnabled,
     minOfferPercent: input.minOfferPercent,
+    ...(input.stockVisibility && { stockVisibility: input.stockVisibility }),
   };
 
   // A previously removed listing is re-activated instead of creating a duplicate
-  if (existing) {
-    return prisma.shopListing.update({
-      where: { id: existing.id },
-      data: { ...data, isActive: true },
-      include: { product: productSelect },
-    });
+  const listing = existing
+    ? await prisma.shopListing.update({
+        where: { id: existing.id },
+        data: { ...data, isActive: true },
+        include: { product: productSelect },
+      })
+    : await prisma.shopListing.create({
+        data: { shopId, productId: input.productId, ...data },
+        include: { product: productSelect },
+      });
+  if (input.stockVisibility && input.stockVisibility !== (existing?.stockVisibility ?? 'HIDDEN')) {
+    await auditVisibility(user, listing, existing?.stockVisibility ?? null);
   }
-  return prisma.shopListing.create({
-    data: { shopId, productId: input.productId, ...data },
-    include: { product: productSelect },
-  });
+  return listing;
 }
 
 export async function updateListing(user, shopId, listingId, input) {
@@ -66,11 +82,15 @@ export async function updateListing(user, shopId, listingId, input) {
   if (input.stockQty !== undefined && input.availability === undefined) {
     data.availability = deriveAvailability(input.stockQty);
   }
-  return prisma.shopListing.update({
+  const updated = await prisma.shopListing.update({
     where: { id: listingId },
     data,
     include: { product: productSelect },
   });
+  if (input.stockVisibility && input.stockVisibility !== listing.stockVisibility) {
+    await auditVisibility(user, updated, listing.stockVisibility);
+  }
+  return updated;
 }
 
 // Soft delete: orders reference listings, so we deactivate instead of deleting.

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+import { visibleStockQty } from '../../lib/stockVisibility.js';
 import { AppError } from '../../lib/errors.js';
 import { presentImage } from '../../lib/storage.js';
 import { mergeSocialLinks, presentSocialLinks, sameSocialLinks } from '../../lib/socialLinks.js';
@@ -154,7 +155,8 @@ export async function getShop(slug, userId) {
   };
 }
 
-export async function getShopProducts(slug, query) {
+// viewer: from loadViewer(); decides whether each listing's stockQty is sent (else null)
+export async function getShopProducts(slug, query, viewer = null) {
   const shop = await findActiveShop(slug);
   const { q, category, sort, bargainOnly, availableOnly, page, limit } = query;
 
@@ -210,10 +212,11 @@ export async function getShopProducts(slug, query) {
     price: l.price,
     msrp: l.product.msrp,
     availability: l.availability,
+    stockQty: visibleStockQty(viewer, l),
     bargainEnabled: l.bargainEnabled,
   }));
 
-  return { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+  return { items, restricted: rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
 }
 
 export async function getShopCategories(slug) {

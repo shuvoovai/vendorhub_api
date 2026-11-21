@@ -537,6 +537,8 @@ components:
               minimum: 0
               maximum: 100000
               nullable: true
+            stockVisibility:
+              $ref: '#/components/schemas/StockVisibility'
             availability:
               $ref: '#/components/schemas/Availability'
             bargainEnabled:
@@ -628,7 +630,7 @@ components:
           format: date-time
     OwnerListing:
       type: object
-      required: [id, price, stockQty, availability, bargainEnabled, minOfferPercent, isActive]
+      required: [id, price, stockQty, stockVisibility, availability, bargainEnabled, minOfferPercent, isActive]
       properties:
         id:
           type: string
@@ -638,6 +640,8 @@ components:
         stockQty:
           type: integer
           nullable: true
+        stockVisibility:
+          $ref: '#/components/schemas/StockVisibility'
         availability:
           $ref: '#/components/schemas/Availability'
         bargainEnabled:

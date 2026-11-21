@@ -464,7 +464,10 @@ paths:
         - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: One page of this shop's products, with this shop's price and availability.
+          description: >-
+            One page of this shop's products, with this shop's price and availability. Each item's stockQty is the
+            number only when the listing's stockVisibility allows the viewer (Bearer token optional), else null;
+            "private, no-store" when the page contains such a listing.
           content:
             application/json:
               schema:
@@ -478,6 +481,18 @@ paths:
                     items:
                       type: object
                       additionalProperties: true
+                      required: [listingId, price, availability, stockQty]
+                      properties:
+                        listingId:
+                          type: string
+                          format: uuid
+                        price:
+                          type: integer
+                        availability:
+                          $ref: '#/components/schemas/Availability'
+                        stockQty:
+                          type: integer
+                          nullable: true
                   meta:
                     type: object
                     properties:
@@ -736,13 +751,21 @@ components:
               type: integer
     Listing:
       type: object
-      description: One shop's offer for a product. Stock numbers are never shown publicly, only the availability.
+      description: >-
+        One shop's offer for a product. stockQty is sent only when the listing's stockVisibility allows the viewer
+        (log in with a Bearer token to be recognised); otherwise null. When the answer contains such a listing it is
+        sent with Cache-Control "private, no-store" and Vary Authorization.
+      required: [id, price, availability, stockQty]
       properties:
         id:
           type: string
           format: uuid
         price:
           type: integer
+        stockQty:
+          type: integer
+          nullable: true
+          description: The stock number, or null when it is not counted or this viewer may not see it (stockVisibility). Availability is always sent.
         availability:
           $ref: '#/components/schemas/Availability'
         bargainEnabled:
