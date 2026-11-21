@@ -1686,7 +1686,11 @@ components:
           $ref: '#/components/schemas/ShopListing'
     Cart:
       type: object
-      description: The cart grouped by shop, with live prices, problems flagged per item, and whether checkout is possible.
+      description: >-
+        The cart grouped by shop, with live prices, problems flagged per item, and whether checkout is possible.
+        Each item's unitPrice is computed by the server: the lowest of the listing price, a running flash deal
+        (dealApplied true, dealEndsAt set; only while deal units are left for that quantity) and an accepted bargain
+        (bargainApplied). Checkout charges the same price.
       additionalProperties: true
       properties:
         shops:

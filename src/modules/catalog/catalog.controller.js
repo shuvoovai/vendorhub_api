@@ -1,7 +1,7 @@
 import * as catalogService from './catalog.service.js';
 
 export const categories = async (req, res) => {
-  res.json({ success: true, data: await catalogService.listCategories() });
+  res.json({ success: true, data: await catalogService.listCategories(req.validated) });
 };
 
 export const brands = async (req, res) => {

@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
+import { runningDeals, unitPriceFor } from '../../lib/deals.js';
 
 const MAX_QTY_PER_LINE = 10;
 
@@ -64,6 +65,7 @@ export async function getCart(userId) {
   const groups = new Map();
   let itemCount = 0;
   let hasProblem = false;
+  const deals = await runningDeals(prisma, (cart?.items ?? []).map((i) => i.listingId));
 
   for (const item of cart?.items ?? []) {
     const l = item.listing;
@@ -80,9 +82,14 @@ export async function getCart(userId) {
         item.bargain.agreedPrice &&
         item.bargain.customerId === userId,
     );
-    // const unitPrice = bargainApplied ? item.bargain.agreedPrice : l.price;
-       const unitPrice = bargainApplied ? Math.min(item.bargain.agreedPrice, l.price) : l.price;
-        // never pay more than the current listing price
+    // the lowest of: listing price, running flash deal, accepted bargain (never more than the listing price)
+    const deal = deals.get(l.id);
+    const { unitPrice, dealApplied } = unitPriceFor({
+      listingPrice: l.price,
+      deal,
+      quantity: item.quantity,
+      bargainPrice: bargainApplied ? item.bargain.agreedPrice : null,
+    });
     const lineTotal = unitPrice * item.quantity;
 
     if (!groups.has(l.shop.id)) {
@@ -105,6 +112,8 @@ export async function getCart(userId) {
       lineTotal,
       availability: l.availability,
       bargainApplied,
+      dealApplied,
+      dealEndsAt: dealApplied ? deal.endsAt : null,
       problem,
     });
 

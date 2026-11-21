@@ -137,6 +137,7 @@ model User {
   fileUploads         FileUpload[]
   returnRequests      ReturnRequest[]
   returnMessages      ReturnMessage[]
+  flashDealsCreated FlashDeal[] @relation("FlashDealCreator")
 }
 
 model RefreshToken {
@@ -306,6 +307,7 @@ model Category {
   slug     String     @unique
   parentId String?
   virtualTryOn Boolean    @default(false) // admin switch: customers may try products of this category on
+  sortOrder Int        @default(0) // admin-chosen order of top-level categories on the home page
   parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
   children Category[] @relation("CategoryTree")
   products Product[]
@@ -367,6 +369,7 @@ model ShopListing {
   bargains   Bargain[]
   cartItems  CartItem[]
   orderItems OrderItem[]
+  flashDeals FlashDeal[]
 
   @@unique([shopId, productId])
   @@index([productId, price])
@@ -724,4 +727,25 @@ model Banner {
   updatedAt DateTime  @updatedAt
 
   @@index([isActive, sortOrder])
+}
+
+// Flash deal: a temporary lower price on one shop listing. The price is applied by the server
+// (cart and checkout) only while the deal is running; at most one active deal per listing.
+model FlashDeal {
+  id          String      @id @default(uuid())
+  listingId   String
+  dealPrice   Int // BDT, lower than the listing price
+  startsAt    DateTime
+  endsAt      DateTime
+  isActive    Boolean     @default(true)
+  stockLimit  Int? // units sold at the deal price; null = no limit
+  soldQty     Int         @default(0)
+  createdById String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  listing     ShopListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  createdBy   User        @relation("FlashDealCreator", fields: [createdById], references: [id])
+
+  @@index([listingId])
+  @@index([isActive, endsAt])
 }

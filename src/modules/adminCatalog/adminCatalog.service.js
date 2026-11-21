@@ -29,11 +29,11 @@ async function assertCategoryNameFree(name, parentId, exceptId) {
   if (same) throw new AppError(409, 'A category with this name already exists here');
 }
 
-export async function createCategory(admin, { name, parentId }) {
+export async function createCategory(admin, { name, parentId, sortOrder }) {
   if (parentId) await assertRootCategory(parentId);
   await assertCategoryNameFree(name, parentId, null);
   const category = await prisma.category.create({
-    data: { name, slug: await uniqueSlug('category', name), parentId: parentId ?? null },
+    data: { name, slug: await uniqueSlug('category', name), parentId: parentId ?? null, sortOrder: sortOrder ?? 0 },
   });
   await audit(admin.id, 'catalog.category_created', 'Category', category.id, { name });
   return category;
@@ -59,7 +59,7 @@ export async function updateCategory(admin, id, input) {
   // the slug stays the same so existing links keep working
   const updated = await prisma.category.update({
     where: { id },
-    data: { ...(input.name && { name: input.name }), parentId: newParentId },
+    data: { ...(input.name && { name: input.name }), parentId: newParentId, ...(input.sortOrder !== undefined && { sortOrder: input.sortOrder }) },
   });
   await audit(admin.id, 'catalog.category_updated', 'Category', id, input);
   return updated;

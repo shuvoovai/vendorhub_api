@@ -1,0 +1,440 @@
+paths:
+  /api/v1/deals/flash:
+    get:
+      tags: [Catalog]
+      operationId: listFlashDeals
+      summary: Running flash deals as product cards (soonest-ending first)
+      description: >-
+        Public. Sent with Cache-Control "public, max-age=60". Deals that are active, started and not ended,
+        with deal units left, on an in-stock listing of an active shop. One item per product (the deal ending
+        soonest). Each item is the GET /products card plus the deal fields; id is the product id.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 10
+      responses:
+        '200':
+          description: The running deals.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FlashDealCard'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/v1/owner/shops/{shopId}/deals:
+    get:
+      tags: [Shops]
+      operationId: ownerListDeals
+      summary: The deals on this shop's listings (owner, staff or admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DealShopId'
+      responses:
+        '200':
+          description: All deals of the shop, latest end first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FlashDeal'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Shops]
+      operationId: ownerCreateDeal
+      summary: Create a flash deal on one of the shop's listings (audited as deal.created)
+      description: >-
+        dealPrice must be lower than the listing price; endsAt after startsAt, at most 7 days later and in
+        the future. At most one active deal per listing in any period (409). A listing of another shop: 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DealShopId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [listingId, dealPrice, startsAt, endsAt]
+              additionalProperties: false
+              properties:
+                listingId:
+                  type: string
+                  format: uuid
+                dealPrice:
+                  type: integer
+                  minimum: 1
+                startsAt:
+                  type: string
+                  format: date-time
+                endsAt:
+                  type: string
+                  format: date-time
+                stockLimit:
+                  type: integer
+                  minimum: 1
+                  nullable: true
+                  description: Units sold at the deal price; null = no limit.
+                isActive:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlashDealResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The listing already has an active deal in that period.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/owner/shops/{shopId}/deals/{id}:
+    patch:
+      tags: [Shops]
+      operationId: ownerUpdateDeal
+      summary: Update a deal (same rules as create; audited as deal.updated)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DealShopId'
+        - $ref: '#/components/parameters/DealId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                dealPrice:
+                  type: integer
+                  minimum: 1
+                startsAt:
+                  type: string
+                  format: date-time
+                endsAt:
+                  type: string
+                  format: date-time
+                stockLimit:
+                  type: integer
+                  minimum: 1
+                  nullable: true
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: The updated deal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlashDealResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Another active deal overlaps that period.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Shops]
+      operationId: ownerDeleteDeal
+      summary: Delete a deal (audited as deal.deleted)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DealShopId'
+        - $ref: '#/components/parameters/DealId'
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/deals:
+    get:
+      tags: [Admin]
+      operationId: adminListDeals
+      summary: All flash deals (latest end first)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: One page of deals.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FlashDeal'
+                  meta:
+                    type: object
+                    properties:
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/deals/{id}:
+    delete:
+      tags: [Admin]
+      operationId: adminDeleteDeal
+      summary: Delete any deal (audited as deal.admin_deleted)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DealId'
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    DealShopId:
+      name: shopId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DealId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    FlashDealCard:
+      type: object
+      required:
+        [id, slug, title, brand, category, image, thumbnail, msrp, lowestPrice, highestPrice, shopCount,
+         availability, bargainAvailable, createdAt, dealPrice, originalPrice, dealEndsAt, dealId, listingId]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The product id.
+        slug:
+          type: string
+        title:
+          type: string
+        brand:
+          type: object
+          nullable: true
+          required: [id, name]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+        category:
+          type: object
+          required: [id, name, slug]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            slug:
+              type: string
+        image:
+          type: string
+          nullable: true
+        thumbnail:
+          type: string
+          nullable: true
+        msrp:
+          type: integer
+          nullable: true
+        lowestPrice:
+          type: integer
+          description: Lowest normal listing price of the product (all shops).
+        highestPrice:
+          type: integer
+        shopCount:
+          type: integer
+        availability:
+          $ref: '#/components/schemas/Availability'
+        bargainAvailable:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        dealPrice:
+          type: integer
+        originalPrice:
+          type: integer
+          description: The deal listing's normal price.
+        dealEndsAt:
+          type: string
+          format: date-time
+        dealId:
+          type: string
+          format: uuid
+        listingId:
+          type: string
+          format: uuid
+          description: The listing the deal is on (open /products/{slug}?listingId= to buy at the deal price).
+    FlashDeal:
+      type: object
+      required: [id, listingId, dealPrice, startsAt, endsAt, isActive, stockLimit, soldQty, createdAt, updatedAt, listing]
+      properties:
+        id:
+          type: string
+          format: uuid
+        listingId:
+          type: string
+          format: uuid
+        dealPrice:
+          type: integer
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        isActive:
+          type: boolean
+        stockLimit:
+          type: integer
+          nullable: true
+        soldQty:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        listing:
+          type: object
+          required: [id, price, shop, product]
+          properties:
+            id:
+              type: string
+              format: uuid
+            price:
+              type: integer
+            shop:
+              type: object
+              required: [id, name, slug]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                slug:
+                  type: string
+            product:
+              type: object
+              required: [id, slug, title]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                slug:
+                  type: string
+                title:
+                  type: string
+    FlashDealResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/FlashDeal'

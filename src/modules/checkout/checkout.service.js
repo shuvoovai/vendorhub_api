@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { env } from '../../config/env.js';
 import { deriveAvailability } from '../../lib/availability.js';
+import { runningDeals, unitPriceFor, claimDealUnits } from '../../lib/deals.js';
 import { notifyNewOrders } from '../notifications/notifications.events.js';
 
 const DELIVERY_FEE = 60; // taka, charged once per shop that delivers
@@ -98,6 +99,7 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
       // 1. Re-check every item and group by shop. Prices are re-read here, never taken from the client.
       const byShop = new Map();
       const problems = [];
+      const deals = await runningDeals(tx, cart.items.map((i) => i.listingId));
       for (const item of cart.items) {
         const l = item.listing;
         let problem = null;
@@ -115,9 +117,14 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
             item.bargain.agreedPrice &&
             item.bargain.customerId === userId,
         );
-        // const unitPrice = bargained ? item.bargain.agreedPrice : l.price;
-           const unitPrice = bargained ? Math.min(item.bargain.agreedPrice, l.price) : l.price; 
-           // never pay more than the current listing price
+        // the lowest of: listing price, running flash deal, accepted bargain (never more than the listing price)
+        const deal = deals.get(l.id);
+        const { unitPrice, dealApplied } = unitPriceFor({
+          listingPrice: l.price,
+          deal,
+          quantity: item.quantity,
+          bargainPrice: bargained ? item.bargain.agreedPrice : null,
+        });
 
         if (!byShop.has(l.shop.id)) byShop.set(l.shop.id, { shop: l.shop, lines: [] });
         byShop.get(l.shop.id).lines.push({
@@ -127,6 +134,7 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
           quantity: item.quantity,
           bargained,
           stockQty: l.stockQty,
+          dealId: dealApplied ? deal.id : null,
         });
       }
       if (problems.length) {
@@ -181,6 +189,15 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
             where: { id: line.listingId },
             data: { availability: deriveAvailability(left.stockQty) },
           });
+        }
+      }
+
+      // 4b. Claim the flash deal units (a deal that ended or sold out meanwhile -> 409, nothing saved)
+      for (const { lines } of byShop.values()) {
+        for (const line of lines) {
+          if (line.dealId && !(await claimDealUnits(tx, line.dealId, line.quantity))) {
+            throw new AppError(409, `The flash deal for ${line.title} has ended; please review your cart`);
+          }
         }
       }
 

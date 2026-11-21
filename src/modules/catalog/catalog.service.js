@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { thumbFor } from '../../lib/storage.js';
+import { runningDeals } from '../../lib/deals.js';
 const AVAILABILITY_RANK = { IN_STOCK: 4, AVAILABLE: 3, LIMITED: 2, OUT_OF_STOCK: 1 };
 
 // The "best" availability among a product's listings (used on product cards).
@@ -11,7 +12,8 @@ const bestAvailability = (listings) =>
     'OUT_OF_STOCK',
   );
 
-export async function listCategories() {
+export async function listCategories({ topLevel } = {}) {
+  if (topLevel) return listTopCategories();
   const rows = await prisma.category.findMany({
     orderBy: { name: 'asc' },
     include: { _count: { select: { products: true } } },
@@ -21,8 +23,24 @@ export async function listCategories() {
     name: c.name,
     slug: c.slug,
     parentId: c.parentId,
+    sortOrder: c.sortOrder,
     productCount: c._count.products,
   }));
+}
+
+// Home page: top-level categories; productCount = active products in the category and its subcategories.
+// Ordered by the admin's sortOrder, then the biggest categories first.
+async function listTopCategories() {
+  const rows = await prisma.$queryRaw`
+    SELECT c.id, c.name, c.slug, c."parentId", c."sortOrder",
+           (SELECT COUNT(*)::int FROM "Product" p
+             WHERE p."isActive" = true
+               AND (p."categoryId" = c.id OR p."categoryId" IN (SELECT k.id FROM "Category" k WHERE k."parentId" = c.id))
+           ) AS "productCount"
+    FROM "Category" c
+    WHERE c."parentId" IS NULL
+    ORDER BY c."sortOrder" ASC, "productCount" DESC, c.name ASC`;
+  return rows;
 }
 
 export async function listBrands() {
@@ -42,18 +60,34 @@ const ORDER_BY = {
   newest: Prisma.sql`fp."createdAt" DESC, fp.id ASC`,
   price_asc: Prisma.sql`m."lowestPrice" ASC, fp.id ASC`,
   price_desc: Prisma.sql`m."lowestPrice" DESC, fp.id ASC`,
+  // units ordered in the last 30 days (cancelled orders excluded), then newest
+  popular: Prisma.sql`COALESCE(pop.units, 0) DESC, fp."createdAt" DESC, fp.id ASC`,
 };
+
+// Joined only for sort=popular
+const POPULAR_JOIN = Prisma.sql`
+    LEFT JOIN (
+      SELECT sl."productId", SUM(oi.quantity)::int AS units
+      FROM "OrderItem" oi
+      JOIN "SubOrder" so ON so.id = oi."subOrderId"
+      JOIN "ShopListing" sl ON sl.id = oi."listingId"
+      WHERE so."createdAt" >= now() - interval '30 days' AND so.status <> 'CANCELLED'
+      GROUP BY sl."productId"
+    ) pop ON pop."productId" = fp.id`;
 
 
 // "%" and "_" (and the escape character itself) in a search text are normal characters, not wildcards.
 const likePattern = (text) => `%${text.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
 
 export async function listProducts(query) {
-  const { q, category, brand, minPrice, maxPrice, shopId, marketId, availableOnly, sort, page, limit } = query;
+  const { q, category, brand, minPrice, maxPrice, shopId, marketId, availableOnly, newSinceDays, productIds, sort, page, limit } = query;
 
   // Product filters, written on Product columns only, so PostgreSQL can use their indexes
   // (trigram index on the title, existing indexes on brandId and categoryId).
   const productConds = [Prisma.sql`p."isActive" = true`];
+  if (newSinceDays) productConds.push(Prisma.sql`p."createdAt" >= now() - make_interval(days => ${newSinceDays}::int)`);
+  // internal only (the flash deals list): exactly these products
+  if (productIds) productConds.push(Prisma.sql`p.id = ANY(${productIds})`);
   if (q) {
     const pattern = likePattern(q);
     productConds.push(Prisma.sql`(p.title ILIKE ${pattern} ESCAPE '\\'
@@ -112,6 +146,7 @@ export async function listProducts(query) {
            COUNT(*) OVER() AS total
     FROM fp
     JOIN m ON m."productId" = fp.id
+    ${sort === 'popular' ? POPULAR_JOIN : Prisma.empty}
     ORDER BY ${ORDER_BY[sort]}
     LIMIT ${limit} OFFSET ${offset}`;
 
@@ -208,9 +243,17 @@ export async function getProduct(slug, listingId) {
     ]),
   );
 
+  const deals = await runningDeals(prisma, product.listings.map((l) => l.id));
+  const dealOf = (l) => {
+    const d = deals.get(l.id);
+    return d && d.dealPrice < l.price && (d.stockLimit === null || d.soldQty < d.stockLimit)
+      ? { dealPrice: d.dealPrice, endsAt: d.endsAt }
+      : null;
+  };
   const toListing = (l) => ({
     id: l.id,
     price: l.price,
+    deal: dealOf(l), // a running flash deal: the cart and checkout charge dealPrice
     availability: l.availability,
     bargainEnabled: l.bargainEnabled,
     discountPercent: product.msrp ? Math.round((1 - l.price / product.msrp) * 100) : null,

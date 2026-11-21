@@ -10,12 +10,14 @@ const bool = z.enum(['true', 'false']).transform((v) => v === 'true');
 export const categorySchema = z.object({
   name: z.string().trim().min(2).max(80),
   parentId: z.string().uuid().nullable().optional(),
+  sortOrder: z.number().int().min(0).max(1000).optional(),
 });
 
 export const categoryUpdateSchema = z
   .object({
     name: z.string().trim().min(2).max(80).optional(),
     parentId: z.string().uuid().nullable().optional(),
+    sortOrder: z.number().int().min(0).max(1000).optional(),
   })
   .refine(nonEmpty, nonEmptyMsg);
 

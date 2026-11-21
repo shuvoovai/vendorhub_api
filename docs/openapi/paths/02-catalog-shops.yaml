@@ -4,9 +4,19 @@ paths:
       tags: [Catalog]
       operationId: listCategories
       summary: All categories with product counts
+      description: >-
+        Default: every category (subcategories too), alphabetical. With topLevel=true (home page):
+        only top-level categories, productCount includes their subcategories' active products,
+        ordered by sortOrder, then productCount descending.
+      parameters:
+        - name: topLevel
+          in: query
+          schema:
+            type: string
+            enum: ['true', 'false']
       responses:
         '200':
-          description: Categories, alphabetical.
+          description: Categories.
           content:
             application/json:
               schema:
@@ -90,8 +100,16 @@ paths:
           in: query
           schema:
             type: string
-            enum: [newest, price_asc, price_desc]
+            enum: [newest, price_asc, price_desc, popular]
             default: newest
+          description: popular = units ordered in the last 30 days (cancelled orders excluded), then newest.
+        - name: newSinceDays
+          in: query
+          description: Only products added in the last N days ("New arrivals").
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
         - $ref: '#/components/parameters/Page'
         - name: limit
           in: query
@@ -603,6 +621,8 @@ components:
           type: string
           format: uuid
           nullable: true
+        sortOrder:
+          type: integer
         productCount:
           type: integer
     Brand:
@@ -730,6 +750,17 @@ components:
         discountPercent:
           type: integer
           nullable: true
+        deal:
+          description: A running flash deal on this listing; the cart and checkout charge dealPrice.
+          nullable: true
+          type: object
+          required: [dealPrice, endsAt]
+          properties:
+            dealPrice:
+              type: integer
+            endsAt:
+              type: string
+              format: date-time
         shop:
           $ref: '#/components/schemas/ListingShop'
     ProductDetail:
