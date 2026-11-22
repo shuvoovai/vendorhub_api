@@ -707,7 +707,7 @@ paths:
         - bearerAuth: []
       responses:
         '200':
-          description: Bargain information (the shop's minimum stays private).
+          description: Bargain information (the shop's minimum stays private). During a running flash deal listPrice is the deal price and the offer range is based on it.
           content:
             application/json:
               schema:
@@ -719,7 +719,7 @@ paths:
       tags: [Bargains]
       operationId: createBargain
       summary: Make an offer (accepted automatically when it meets the shop's minimum)
-      description: One live negotiation per customer and listing. The shop is notified.
+      description: One live negotiation per customer and listing. The shop is notified. During a running flash deal the offer range and the saved listPrice are based on the deal price (computed by the server).
       security:
         - bearerAuth: []
       requestBody:

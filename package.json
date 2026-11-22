@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch --env-file=.env src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "seed:deals": "node --env-file=.env scripts/seed-flash-deals.mjs"
   },
   "keywords": [],
   "author": "",

@@ -26,7 +26,7 @@ Node 22 (ES modules, plain JS), Express 5, Prisma 6, PostgreSQL 16 + pgvector (D
 - PowerShell suites `test-*.ps1`, all run by `run-all-tests.ps1` (reseeds first; `test-security.ps1` must stay LAST). 35 suites, all must pass.
 - Test `.env`: `MAIL_MODE=log`, `TRYON_MODE=mock`, `SEARCH_IMAGE_MODE=mock`, `AUTO_VERIFY_EMAIL_DOMAINS=vendorshub.test`. Never run tests in gemini/smtp mode.
 - Scripts: ASCII only. PowerShell 5.1 quirks: wrap one-item results in `@()`; a WebRequestSession re-sends earlier headers; a hand-made `Cookie` header is dropped; curl joins repeated `--data-binary`.
-- Helpers: `node --env-file=.env prisma/seed.js`, `scripts/backfill-fingerprints.mjs`, `scripts/check-openapi.mjs`, `scripts/clean-orphan-files.mjs` (dry run by default).
+- Helpers: `node --env-file=.env prisma/seed.js`, `scripts/backfill-fingerprints.mjs`, `scripts/check-openapi.mjs`, `scripts/clean-orphan-files.mjs` (dry run by default), `npm run seed:deals` (demo flash deals, dev only).
 
 ## Working style
 Small steps. Read the relevant files before changing them. Ask before installing packages, running migrations or deleting data. After a change: run the affected test, then the full suite. Conventional commits (`feat(...)`, `fix(...)`, `chore(...)`), branch `main`. Short answers.

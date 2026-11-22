@@ -36,8 +36,12 @@ $owner2 = Login 'owner2@vendorshub.test'    # Dhaka Mobile House owner
 $techId = (Call 'GET' '/shops/techzone-electronics' $null $null).json.data.id
 $dmhId = (Call 'GET' '/shops/dhaka-mobile-house' $null $null).json.data.id
 Need $techId 'TechZone'; Need $dmhId 'Dhaka Mobile House'
-$listing = @((Call 'GET' "/shops/$techId/listings" $owner $null).json.data | Where-Object {
-    $_.isActive -and $_.availability -ne 'OUT_OF_STOCK' -and ($null -eq $_.stockQty -or $_.stockQty -ge 3) -and $_.price -ge 100 })[0]
+$okListing = { $_.isActive -and $_.availability -ne 'OUT_OF_STOCK' -and ($null -eq $_.stockQty -or $_.stockQty -ge 3) -and $_.price -ge 100 }
+$techListings = @((Call 'GET' "/shops/$techId/listings" $owner $null).json.data | Where-Object $okListing)
+$dmhProducts = @((Call 'GET' "/shops/$dmhId/listings" $owner2 $null).json.data | Where-Object $okListing | ForEach-Object { $_.productId })
+# prefer a product that Dhaka Mobile House sells too, so the one-item-per-product rule can be checked
+$listing = @($techListings | Where-Object { $dmhProducts -contains $_.productId })[0]
+if (-not $listing) { $listing = $techListings[0] }
 Need $listing 'an in-stock TechZone listing'
 $otherListing = @((Call 'GET' "/shops/$dmhId/listings" $owner2 $null).json.data)[0]
 Need $otherListing 'a Dhaka Mobile House listing'
@@ -54,29 +58,29 @@ Check 'short Cache-Control' ([string]$pub.headers['Cache-Control']) 'public, max
 Check 'limit over 20: 400' (Call 'GET' '/deals/flash?limit=21' $null $null).status 400
 
 # ---- 2. access and validation ----
-Check 'logged out: 401' (Call 'POST' "/owner/shops/$techId/deals" $null $deal).status 401
-Check 'a customer: 403' (Call 'POST' "/owner/shops/$techId/deals" $cust $deal).status 403
+Check 'logged out: 401' (Call 'POST' "/shops/$techId/deals" $null $deal).status 401
+Check 'a customer: 403' (Call 'POST' "/shops/$techId/deals" $cust $deal).status 403
 $foreign = $deal.Clone(); $foreign.listingId = $otherListing.id
-Check "another shop's listing via own shop: 404" (Call 'POST' "/owner/shops/$techId/deals" $owner $foreign).status 404
+Check "another shop's listing via own shop: 404" (Call 'POST' "/shops/$techId/deals" $owner $foreign).status 404
 $o3 = Login 'owner3@vendorshub.test'
-Check 'a shop the user does not manage: 403' (Call 'POST' "/owner/shops/$dmhId/deals" $owner $foreign).status 403
-Check 'bad shopId: 400' (Call 'POST' '/owner/shops/not-a-uuid/deals' $owner $deal).status 400
+Check 'a shop the user does not manage: 403' (Call 'POST' "/shops/$dmhId/deals" $owner $foreign).status 403
+Check 'bad shopId: 400' (Call 'POST' '/shops/not-a-uuid/deals' $owner $deal).status 400
 $same = $deal.Clone(); $same.dealPrice = $price
-Check 'dealPrice equal to the price: 400' (Call 'POST' "/owner/shops/$techId/deals" $owner $same).status 400
+Check 'dealPrice equal to the price: 400' (Call 'POST' "/shops/$techId/deals" $owner $same).status 400
 $higher = $deal.Clone(); $higher.dealPrice = $price + 1
-Check 'dealPrice above the price: 400' (Call 'POST' "/owner/shops/$techId/deals" $owner $higher).status 400
+Check 'dealPrice above the price: 400' (Call 'POST' "/shops/$techId/deals" $owner $higher).status 400
 $back = $deal.Clone(); $back.endsAt = (Iso $now.AddMinutes(-2))
-Check 'endsAt before startsAt: 400' (Call 'POST' "/owner/shops/$techId/deals" $owner $back).status 400
+Check 'endsAt before startsAt: 400' (Call 'POST' "/shops/$techId/deals" $owner $back).status 400
 $long = $deal.Clone(); $long.endsAt = (Iso $now.AddDays(8))
-Check 'longer than 7 days: 400' (Call 'POST' "/owner/shops/$techId/deals" $owner $long).status 400
+Check 'longer than 7 days: 400' (Call 'POST' "/shops/$techId/deals" $owner $long).status 400
 $extra = $deal.Clone(); $extra.unitPrice = 1
-Check 'unknown field: 400' (Call 'POST' "/owner/shops/$techId/deals" $owner $extra).status 400
+Check 'unknown field: 400' (Call 'POST' "/shops/$techId/deals" $owner $extra).status 400
 
 # ---- 3. create and the public shape ----
-$r = Call 'POST' "/owner/shops/$techId/deals" $owner $deal
+$r = Call 'POST' "/shops/$techId/deals" $owner $deal
 Check 'owner creates a deal: 201' $r.status 201
 $dealId = $r.json.data.id
-Check 'a second overlapping deal: 409' (Call 'POST' "/owner/shops/$techId/deals" $owner $deal).status 409
+Check 'a second overlapping deal: 409' (Call 'POST' "/shops/$techId/deals" $owner $deal).status 409
 $items = @(Flash)
 Check 'public list shows the deal' $items.Count 1
 $it = $items[0]
@@ -89,6 +93,23 @@ Check 'originalPrice is the listing price' $it.originalPrice $price
 Check 'dealEndsAt is ISO' ([string]$it.dealEndsAt -match '^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$') $true
 $detail = Call 'GET' "/products/$($it.slug)?listingId=$($listing.id)" $null $null
 Check 'product page shows the deal price' $detail.json.data.selectedListing.deal.dealPrice $dealPrice
+Check 'no stock number in a flash item' ($null -eq $it.PSObject.Properties['stockQty']) $true
+$info = Call 'GET' "/listings/$($listing.id)/bargain-info" $cust $null
+Check 'bargain offers are based on the deal price' $info.json.data.listPrice $dealPrice
+Check 'the offer range stays below the deal price' ($info.json.data.maxOffer -lt $dealPrice) $true
+# one item per product: a cheaper deal on another verified shop's listing of the same product wins
+$twin = @((Call 'GET' "/shops/$dmhId/listings" $owner2 $null).json.data | Where-Object { $_.productId -eq $listing.productId -and $_.isActive -and $_.availability -ne 'OUT_OF_STOCK' -and $_.price -gt 100 })[0]
+if ($twin) {
+    $cheap = [Math]::Min([int]$twin.price - 1, $dealPrice - 10)
+    $tw = Call 'POST' "/shops/$dmhId/deals" $owner2 @{ listingId = $twin.id; dealPrice = $cheap; startsAt = (Iso $now.AddMinutes(-1)); endsAt = (Iso $now.AddHours(5)) }
+    Check 'second shop creates a deal on the same product' $tw.status 201
+    $both = @(Flash)
+    Check 'still one item for the product' @($both | Where-Object { $_.id -eq $listing.productId }).Count 1
+    Check 'the cheapest deal is shown' (@($both | Where-Object { $_.id -eq $listing.productId })[0].dealPrice) $cheap
+    Check 'second shop deletes its deal' (Call 'DELETE' "/shops/$dmhId/deals/$($tw.json.data.id)" $owner2 $null).status 200
+} else {
+    Write-Host 'INFO  no Dhaka Mobile House listing of the same product; cheapest-deal check skipped'
+}
 
 # ---- 4. cart and checkout use the deal price ----
 Call 'DELETE' '/cart' $cust $null | Out-Null
@@ -102,24 +123,45 @@ Check 'checkout: 201' $co.status 201
 $item = @(@($co.json.data.orders)[0].items)[0]
 Check 'checkout charges the deal price' $item.unitPrice $dealPrice
 Check 'order subtotal uses the deal price' @($co.json.data.orders)[0].subtotal ($dealPrice * 2)
-Check 'sold units are counted' (@((Call 'GET' "/owner/shops/$techId/deals" $owner $null).json.data | Where-Object { $_.id -eq $dealId })[0].soldQty) 2
+Check 'sold units are counted' (@((Call 'GET' "/shops/$techId/deals" $owner $null).json.data | Where-Object { $_.id -eq $dealId })[0].soldQty) 2
 
 # ---- 5. stock limit: no deal units left -> normal price ----
-Check 'owner sets stockLimit 2' (Call 'PATCH' "/owner/shops/$techId/deals/$dealId" $owner @{ stockLimit = 2 }).status 200
+Check 'owner sets stockLimit 2' (Call 'PATCH' "/shops/$techId/deals/$dealId" $owner @{ stockLimit = 2 }).status 200
 Check 'sold-out deal is hidden' @(Flash).Count 0
 Call 'POST' '/cart/items' $cust @{ listingId = $listing.id; quantity = 1 } | Out-Null
 $line = @(@((Call 'GET' '/cart' $cust $null).json.data.shops)[0].items)[0]
 Check 'sold-out deal: normal price in the cart' $line.unitPrice $price
 Call 'DELETE' '/cart' $cust $null | Out-Null
-Check 'PATCH dealPrice >= price: 400' (Call 'PATCH' "/owner/shops/$techId/deals/$dealId" $owner @{ dealPrice = $price }).status 400
-Check 'PATCH empty body: 400' (Call 'PATCH' "/owner/shops/$techId/deals/$dealId" $owner @{}).status 400
-Check "other owner cannot PATCH: 403" (Call 'PATCH' "/owner/shops/$techId/deals/$dealId" $o3 @{ dealPrice = 1 }).status 403
-Check "deal under another shop's path: 404" (Call 'PATCH' "/owner/shops/$dmhId/deals/$dealId" $owner2 @{ dealPrice = 1 }).status 404
+Check 'PATCH dealPrice >= price: 400' (Call 'PATCH' "/shops/$techId/deals/$dealId" $owner @{ dealPrice = $price }).status 400
+Check 'PATCH empty body: 400' (Call 'PATCH' "/shops/$techId/deals/$dealId" $owner @{}).status 400
+Check "other owner cannot PATCH: 403" (Call 'PATCH' "/shops/$techId/deals/$dealId" $o3 @{ dealPrice = 1 }).status 403
+Check "deal under another shop's path: 404" (Call 'PATCH' "/shops/$dmhId/deals/$dealId" $owner2 @{ dealPrice = 1 }).status 404
 
 # ---- 6. an expired deal is hidden and the normal price applies again ----
-Check 'owner deletes the deal' (Call 'DELETE' "/owner/shops/$techId/deals/$dealId" $owner $null).status 200
+Check 'owner deletes the deal' (Call 'DELETE' "/shops/$techId/deals/$dealId" $owner $null).status 200
+# a deal that has not started yet is hidden
+$fut = $deal.Clone(); $fut.startsAt = (Iso (Get-Date).AddHours(1)); $fut.endsAt = (Iso (Get-Date).AddHours(3))
+$r = Call 'POST' "/shops/$techId/deals" $owner $fut
+Check 'a future deal is created' $r.status 201
+Check 'the future deal is hidden' @(Flash).Count 0
+Call 'POST' '/cart/items' $cust @{ listingId = $listing.id; quantity = 1 } | Out-Null
+Check 'future deal: normal price in the cart' (@(@((Call 'GET' '/cart' $cust $null).json.data.shops)[0].items)[0].unitPrice) $price
+Call 'DELETE' '/cart' $cust $null | Out-Null
+Check 'owner deletes the future deal' (Call 'DELETE' "/shops/$techId/deals/$($r.json.data.id)" $owner $null).status 200
+
+# a deal in an UNVERIFIED shop is never listed
+$stamp = Get-Date -Format 'yyyyMMddHHmmss'
+$uv = (Call 'POST' '/auth/register' $null @{ name = 'Unverified Dealer'; email = "ud$stamp@vendorshub.test"; password = 'Password123!'; role = 'SHOP_OWNER' }).json.data.accessToken
+$uvShop = (Call 'POST' '/shops' $uv @{ name = "Deal Test $stamp"; addressLine = 'Road 3, Test Area, Dhaka'; phone = '01712345678' }).json.data.id
+Need $uvShop 'the unverified shop'
+$uvListing = (Call 'POST' "/shops/$uvShop/listings" $uv @{ productId = $listing.productId; price = $price; availability = 'IN_STOCK' }).json.data.id
+Need $uvListing 'the unverified listing'
+$uvDeal = Call 'POST' "/shops/$uvShop/deals" $uv @{ listingId = $uvListing; dealPrice = $dealPrice; startsAt = (Iso (Get-Date).AddMinutes(-1)); endsAt = (Iso (Get-Date).AddHours(2)) }
+Check 'an unverified shop may create a deal' $uvDeal.status 201
+Check 'but it is not on the public list' @(Flash).Count 0
+Check 'admin removes it' (Call 'DELETE' "/admin/deals/$($uvDeal.json.data.id)" $admin $null).status 200
 $short = $deal.Clone(); $short.endsAt = (Iso (Get-Date).AddSeconds(4))
-$r = Call 'POST' "/owner/shops/$techId/deals" $owner $short
+$r = Call 'POST' "/shops/$techId/deals" $owner $short
 Check 'a short deal is created' $r.status 201
 $shortId = $r.json.data.id
 Check 'the short deal is listed while running' @(Flash).Count 1

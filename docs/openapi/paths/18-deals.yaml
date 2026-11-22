@@ -5,9 +5,10 @@ paths:
       operationId: listFlashDeals
       summary: Running flash deals as product cards (soonest-ending first)
       description: >-
-        Public. Sent with Cache-Control "public, max-age=60". Deals that are active, started and not ended,
-        with deal units left, on an in-stock listing of an active shop. One item per product (the deal ending
-        soonest). Each item is the GET /products card plus the deal fields; id is the product id.
+        Public. Sent with Cache-Control "public, max-age=60". Deals that are active, started and not ended
+        (startsAt <= now < endsAt), with deal units left, on an active in-stock listing of an active VERIFIED shop.
+        One item per product (its cheapest running deal), soonest-ending first. Each item is the GET /products
+        card plus the deal fields; id is the product id. No stock number is ever included (availability only).
       parameters:
         - name: limit
           in: query
@@ -36,7 +37,7 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
-  /api/v1/owner/shops/{shopId}/deals:
+  /api/v1/shops/{shopId}/deals:
     get:
       tags: [Shops]
       operationId: ownerListDeals
@@ -130,7 +131,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/owner/shops/{shopId}/deals/{id}:
+  /api/v1/shops/{shopId}/deals/{id}:
     patch:
       tags: [Shops]
       operationId: ownerUpdateDeal

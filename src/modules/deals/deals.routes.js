@@ -23,11 +23,11 @@ const params = (schema) => (req, res, next) =>
 // Public (covered by the global /api/v1 rate limiter)
 router.get('/deals/flash', validateQuery(flashQuery), c.listFlash);
 
-// Shop team: only deals on the shop's own listings (assertShopAccess in the service)
-router.get('/owner/shops/:shopId/deals', ...shopTeam, params(shopParams), c.listForShop);
-router.post('/owner/shops/:shopId/deals', ...shopTeam, params(shopParams), validate(createDealSchema), c.create);
-router.patch('/owner/shops/:shopId/deals/:id', ...shopTeam, params(shopDealParams), validate(updateDealSchema), c.update);
-router.delete('/owner/shops/:shopId/deals/:id', ...shopTeam, params(shopDealParams), c.remove);
+// Shop team: only deals on the shop's own listings (assertShopAccess in the service), like /shops/:shopId/listings
+router.get('/shops/:shopId/deals', ...shopTeam, params(shopParams), c.listForShop);
+router.post('/shops/:shopId/deals', ...shopTeam, params(shopParams), validate(createDealSchema), c.create);
+router.patch('/shops/:shopId/deals/:id', ...shopTeam, params(shopDealParams), validate(updateDealSchema), c.update);
+router.delete('/shops/:shopId/deals/:id', ...shopTeam, params(shopDealParams), c.remove);
 
 router.get('/admin/deals', ...adminOnly, validateQuery(adminDealsQuery), c.listAll);
 router.delete('/admin/deals/:id', ...adminOnly, params(dealParams), c.adminRemove);

@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
+import { currentPrice } from '../../lib/deals.js';
 import { loadViewer, visibleStockQty } from '../../lib/stockVisibility.js';
 import { AppError } from '../../lib/errors.js';
 import { env } from '../../config/env.js';
@@ -33,8 +34,9 @@ const offerBounds = (listPrice) => ({
 
 // Offers at or above the shop's private minimum are accepted automatically.
 // A shop that never wants this sets minOfferPercent to 100.
-const meetsShopMinimum = (listing, amount) =>
-  amount >= Math.ceil((listing.price * listing.minOfferPercent) / 100);
+// basePrice: the price the offers are based on (the deal price during a flash deal).
+const meetsShopMinimum = (listing, basePrice, amount) =>
+  amount >= Math.ceil((basePrice * listing.minOfferPercent) / 100);
 
 const isYourTurn = (status, actor) =>
   (actor === 'SHOP' && status === 'AWAITING_SHOP') ||
@@ -192,7 +194,9 @@ export async function bargainInfo(user, listingId) {
   if (!listing || !listing.isActive || !listing.shop.isActive) {
     throw new AppError(404, 'Listing not found');
   }
-  const { min, max } = offerBounds(listing.price);
+  // during a flash deal, offers are based on the deal price
+  const { price: basePrice } = await currentPrice(prisma, listing);
+  const { min, max } = offerBounds(basePrice);
   const active = user
     ? await prisma.bargain.findFirst({
         where: {
@@ -207,7 +211,7 @@ export async function bargainInfo(user, listingId) {
   return {
     listingId,
     bargainEnabled: listing.bargainEnabled && listing.availability !== 'OUT_OF_STOCK',
-    listPrice: listing.price,
+    listPrice: basePrice,
     minOffer: min,
     maxOffer: max,
     responseWindowMinutes: env.BARGAIN_TTL_MINUTES,
@@ -229,7 +233,9 @@ export async function createBargain(user, { listingId, offer }) {
   if (!listing.bargainEnabled) throw new AppError(409, 'This listing does not accept offers');
   if (listing.availability === 'OUT_OF_STOCK') throw new AppError(409, 'This item is out of stock');
 
-  const { min, max } = offerBounds(listing.price);
+  // during a flash deal, offers are based on the deal price (computed here, never sent by the client)
+  const { price: basePrice } = await currentPrice(prisma, listing);
+  const { min, max } = offerBounds(basePrice);
   if (offer < min || offer > max) {
     throw new AppError(400, `Your offer must be between ${min} and ${max}`);
   }
@@ -249,12 +255,12 @@ export async function createBargain(user, { listingId, offer }) {
     });
   }
 
-  const auto = meetsShopMinimum(listing, offer);
+  const auto = meetsShopMinimum(listing, basePrice, offer);
   const bargain = await prisma.bargain.create({
     data: {
       listingId,
       customerId: user.id,
-      listPrice: listing.price,
+      listPrice: basePrice,
       currentOffer: offer,
       status: auto ? 'ACCEPTED' : 'AWAITING_SHOP',
       agreedPrice: auto ? offer : null,
@@ -358,7 +364,7 @@ export async function counterOffer(user, id, amount) {
     if (amount <= lastOwn.amount || amount >= b.currentOffer) {
       throw new AppError(400, `Your new offer must be above ${lastOwn.amount} and below ${b.currentOffer}`);
     }
-    if (meetsShopMinimum(b.listing, amount)) {
+    if (meetsShopMinimum(b.listing, b.listPrice, amount)) { // the price the negotiation started from
       await transition(b, { status: 'ACCEPTED', currentOffer: amount, agreedPrice: amount, expiresAt: buyDeadline() }, [
         { actor: 'CUSTOMER', amount },
         { actor: 'SYSTEM', note: 'Accepted automatically because the offer meets the shop minimum' },

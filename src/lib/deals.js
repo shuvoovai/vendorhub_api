@@ -47,6 +47,17 @@ export function unitPriceFor({ listingPrice, deal, quantity, bargainPrice }) {
 }
 
 /**
+ * The price a customer pays right now for ONE unit of a listing (no bargain): the running deal
+ * price while a deal runs (with units left), else the listing price. Offers are based on this.
+ * @param listing { id, price }
+ */
+export async function currentPrice(db, listing, now = new Date()) {
+  const deal = (await runningDeals(db, [listing.id], now)).get(listing.id);
+  const { unitPrice, dealApplied } = unitPriceFor({ listingPrice: listing.price, deal, quantity: 1, bargainPrice: null });
+  return { price: unitPrice, dealApplied };
+}
+
+/**
  * Claims deal units inside the checkout transaction. Safe when two customers buy the last
  * deal units at the same time: the condition is checked by the UPDATE itself.
  * @returns {Promise<boolean>} false when the deal ended or sold out meanwhile

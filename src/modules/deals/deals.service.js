@@ -44,8 +44,9 @@ const listingInclude = {
 
 // ---------- public ----------
 
-// Running deals (in stock, units left, still cheaper than the listing), one per product
-// (the one ending soonest), soonest-ending first. Each item is a normal product card + the deal.
+// Running deals (in stock, units left, still cheaper than the listing, VERIFIED active shop), one per
+// product (the cheapest deal), soonest-ending first. Each item is a normal product card + the deal.
+// No stock number is ever included here (cards carry availability only), whatever the stockVisibility.
 export async function listFlash({ limit }) {
   const rows = await prisma.$queryRaw`
     SELECT * FROM (
@@ -59,8 +60,8 @@ export async function listFlash({ limit }) {
         AND (d."stockLimit" IS NULL OR d."soldQty" < d."stockLimit")
         AND d."dealPrice" < l.price
         AND l."isActive" = true AND l.availability <> 'OUT_OF_STOCK'
-        AND s."isActive" = true AND p."isActive" = true
-      ORDER BY l."productId", d."endsAt" ASC, d."dealPrice" ASC
+        AND s."isActive" = true AND s."verificationLevel" <> 'UNVERIFIED' AND p."isActive" = true
+      ORDER BY l."productId", d."dealPrice" ASC, d."endsAt" ASC
     ) x
     ORDER BY x."endsAt" ASC, x."dealId" ASC
     LIMIT ${limit}`;
