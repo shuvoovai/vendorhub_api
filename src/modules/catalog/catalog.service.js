@@ -63,6 +63,8 @@ const ORDER_BY = {
   price_desc: Prisma.sql`m."lowestPrice" DESC, fp.id ASC`,
   // units ordered in the last 30 days (cancelled orders excluded), then newest
   popular: Prisma.sql`COALESCE(pop.units, 0) DESC, fp."createdAt" DESC, fp.id ASC`,
+  // internal (the following feed): the newest matching listing first
+  listed: Prisma.sql`m."listedAt" DESC, fp.id ASC`,
 };
 
 // Joined only for sort=popular
@@ -81,7 +83,7 @@ const POPULAR_JOIN = Prisma.sql`
 const likePattern = (text) => `%${text.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
 
 export async function listProducts(query) {
-  const { q, category, brand, minPrice, maxPrice, shopId, marketId, availableOnly, newSinceDays, productIds, sort, page, limit } = query;
+  const { q, category, brand, minPrice, maxPrice, shopId, marketId, availableOnly, newSinceDays, productIds, feed, sort, page, limit } = query;
 
   // Product filters, written on Product columns only, so PostgreSQL can use their indexes
   // (trigram index on the title, existing indexes on brandId and categoryId).
@@ -113,6 +115,18 @@ export async function listProducts(query) {
   if (minPrice !== undefined) listingConds.push(Prisma.sql`l.price >= ${minPrice}`);
   if (maxPrice !== undefined) listingConds.push(Prisma.sql`l.price <= ${maxPrice}`);
   if (availableOnly) listingConds.push(Prisma.sql`l.availability <> 'OUT_OF_STOCK'`);
+  // internal only (GET /products/following): in-stock listings of verified shops the user does or does
+  // not follow, never the user's own shops (owner or staff). Sub-selects, so this stays ONE query.
+  if (feed) {
+    const followed = Prisma.sql`SELECT f."shopId" FROM "ShopFollow" f WHERE f."userId" = ${feed.userId}`;
+    listingConds.push(
+      Prisma.sql`l.availability <> 'OUT_OF_STOCK'`,
+      Prisma.sql`s."verificationLevel" <> 'UNVERIFIED'`,
+      Prisma.sql`s."ownerId" <> ${feed.userId}`,
+      Prisma.sql`l."shopId" NOT IN (SELECT st."shopId" FROM "ShopStaff" st WHERE st."userId" = ${feed.userId})`,
+      feed.scope === 'followed' ? Prisma.sql`l."shopId" IN (${followed})` : Prisma.sql`l."shopId" NOT IN (${followed})`,
+    );
+  }
 
   // fp: the products that pass the product filters.
   // m:  per product, the statistics of its MATCHING listings; only the listings of fp are read,
@@ -131,7 +145,8 @@ export async function listProducts(query) {
              MAX(CASE l.availability
                    WHEN 'IN_STOCK' THEN 4 WHEN 'AVAILABLE' THEN 3 WHEN 'LIMITED' THEN 2 ELSE 1
                  END) AS "availabilityRank",
-             BOOL_OR(l."bargainEnabled") AS "bargainAvailable"
+             BOOL_OR(l."bargainEnabled") AS "bargainAvailable",
+             MAX(l."createdAt") AS "listedAt"
       FROM "ShopListing" l
       JOIN fp ON fp.id = l."productId"
       JOIN "Shop" s ON s.id = l."shopId"
@@ -195,6 +210,12 @@ export async function listProducts(query) {
 }
 
 // viewer: from loadViewer(); decides whether each listing's stockQty is sent (else null)
+// GET /products/following: product cards from the shops the user follows (scope=followed) or from the
+// other verified shops (scope=unfollowed). Prices, shop counts and availability come from those shops only.
+export function listFollowingFeed(userId, { scope, page, limit }) {
+  return listProducts({ feed: { userId, scope }, sort: 'listed', page, limit });
+}
+
 export async function getProduct(slug, listingId, viewer = null) {
   const product = await prisma.product.findFirst({
     where: { slug, isActive: true },

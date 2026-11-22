@@ -14,6 +14,13 @@ export const products = async (req, res) => {
   res.json({ success: true, data: items, meta: { pagination } });
 };
 
+// Depends on who asks: never stored in a shared cache.
+export const followingFeed = async (req, res) => {
+  const { items, pagination } = await catalogService.listFollowingFeed(req.user.id, req.validated);
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: items, meta: { pagination } });
+};
+
 export const product = async (req, res) => {
   const { restricted, ...data } = await catalogService.getProduct(req.params.slug, req.validated.listingId, await loadViewer(req.user));
   markViewerDependent(res, restricted);

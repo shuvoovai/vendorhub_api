@@ -216,6 +216,16 @@ const toMyShop = (shop, membership, staffTitle) => {
 // The shops the user owns or works at: owned first, then staff; oldest first in each group.
 // Shops deactivated by an admin are included, so the owner can see that state.
 // A shop the user both owns and works at is listed once, as OWNER.
+// The active shops this user follows, most recently followed first (one query).
+export async function listFollowing(userId) {
+  const rows = await prisma.shopFollow.findMany({
+    where: { userId, shop: { isActive: true } },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true, shop: { select: { id: true, slug: true, name: true, logoUrl: true } } },
+  });
+  return rows.map((r) => ({ ...r.shop, followedAt: r.createdAt }));
+}
+
 export async function listMyShops(userId) {
   const [owned, memberships] = await Promise.all([
     prisma.shop.findMany({

@@ -574,13 +574,15 @@ paths:
     post:
       tags: [Shops]
       operationId: followShop
-      summary: Follow a shop
+      summary: Follow a shop (idempotent; a shop's own owner/staff cannot follow it)
       parameters:
         - name: slug
           in: path
           required: true
           schema:
             type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+            maxLength: 120
       security:
         - bearerAuth: []
       responses:
@@ -589,8 +591,9 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/FollowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -598,13 +601,15 @@ paths:
     delete:
       tags: [Shops]
       operationId: unfollowShop
-      summary: Unfollow a shop
+      summary: Unfollow a shop (idempotent)
       parameters:
         - name: slug
           in: path
           required: true
           schema:
             type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+            maxLength: 120
       security:
         - bearerAuth: []
       responses:
@@ -613,8 +618,9 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/FollowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':

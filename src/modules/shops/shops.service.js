@@ -270,8 +270,13 @@ export async function getShopReviews(slug, query) {
 
 const followerCount = (shopId) => prisma.shopFollow.count({ where: { shopId } });
 
+// Idempotent: following twice is fine. A shop's own team (owner or staff) cannot follow it.
 export async function followShop(slug, userId) {
   const shop = await findActiveShop(slug);
+  const ownTeam =
+    shop.ownerId === userId ||
+    (await prisma.shopStaff.findUnique({ where: { shopId_userId: { shopId: shop.id, userId } } }));
+  if (ownTeam) throw new AppError(400, 'You cannot follow your own shop');
   await prisma.shopFollow.upsert({
     where: { shopId_userId: { shopId: shop.id, userId } },
     update: {},

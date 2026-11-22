@@ -15,6 +15,12 @@ export const listProductsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(12),
 });
 
+export const followingFeedQuery = z.object({
+  scope: z.enum(['followed', 'unfollowed']).default('followed'),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(24).default(8),
+});
+
 export const productDetailQuery = z.object({
   listingId: z.string().uuid().optional(),
 });

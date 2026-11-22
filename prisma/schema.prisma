@@ -258,6 +258,7 @@ model ShopFollow {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([shopId, userId])
+  @@index([userId]) // "shops I follow" and the home page feed look up by user
 }
 
 // ───────────── VERIFICATION / AUDIT (Admin portal) ─────────────

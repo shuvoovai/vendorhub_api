@@ -106,3 +106,5 @@ export const shopSearchQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(20).default(10),
 });
+// Shop slugs are lowercase letters, digits and hyphens (src/lib/slug.js)
+export const shopSlugParams = z.object({ slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(120) });

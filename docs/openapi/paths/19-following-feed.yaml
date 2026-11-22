@@ -1,0 +1,106 @@
+paths:
+  /api/v1/products/following:
+    get:
+      tags: [Catalog]
+      operationId: listFollowingFeed
+      summary: Home page "From the shops" feed (shops I follow / other shops)
+      description: >-
+        Product cards (the same shape as GET /products) from active, in-stock listings of active VERIFIED
+        shops. scope=followed: shops the user follows; scope=unfollowed: every other such shop. The user's own
+        shops (owner or staff) are never included. lowestPrice, highestPrice, shopCount, availability and
+        bargainAvailable count only the shops in the chosen scope. Newest listing first, one card per product.
+        No stock numbers. Sent with Cache-Control "private, no-store".
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum: [followed, unfollowed]
+            default: followed
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 24
+            default: 8
+      responses:
+        '200':
+          description: One page of product cards.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductCard'
+                  meta:
+                    type: object
+                    required: [pagination]
+                    properties:
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/users/me/following:
+    get:
+      tags: [Profile]
+      operationId: listMyFollowedShops
+      summary: The active shops I follow, most recently followed first
+      description: Sent with Cache-Control "private, no-store".
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The followed shops.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, slug, name, logoUrl, followedAt]
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        slug:
+                          type: string
+                        name:
+                          type: string
+                        logoUrl:
+                          type: string
+                          nullable: true
+                        followedAt:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  schemas:
+    FollowResult:
+      type: object
+      required: [following, followers]
+      properties:
+        following:
+          type: boolean
+        followers:
+          type: integer

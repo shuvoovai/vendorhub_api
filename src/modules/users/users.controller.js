@@ -5,6 +5,11 @@ export const updateProfile = async (req, res) => {
   res.json({ success: true, data: await s.updateProfile(req.user.id, req.body) });
 };
 
+export const listFollowing = async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: await s.listFollowing(req.user.id) });
+};
+
 export const listMyShops = async (req, res) => {
   res.json({ success: true, data: await s.listMyShops(req.user.id) });
 };
