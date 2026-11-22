@@ -1,0 +1,400 @@
+paths:
+  /api/v1/tolets:
+    get:
+      tags: [To-let]
+      operationId: listTolets
+      summary: Approved shop-space listings, newest first
+      description: >-
+        Public. Only APPROVED listings that have not expired (approval lasts 60 days). Never includes the
+        submitter, IP hash, reviewer or rejection reason. Sent with Cache-Control "public, max-age=60".
+      parameters:
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/ToletType'
+        - name: area
+          in: query
+          description: Part of the area name, any letter case.
+          schema:
+            type: string
+            maxLength: 60
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 24
+            default: 8
+      responses:
+        '200':
+          description: One page of listings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tolet'
+                  meta:
+                    type: object
+                    required: [pagination]
+                    properties:
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      tags: [To-let]
+      operationId: createTolet
+      summary: Submit a shop-space listing (no login needed; reviewed by an admin)
+      description: >-
+        Public; a valid Bearer token links the request to the account. Unknown keys are rejected (400). Text is
+        plain (control characters removed, HTML tags rejected). Always saved as PENDING; admins are notified.
+        Limits: 3 saved requests per hour and 10 per day per connection, 3 pending per contact phone (429).
+        website is a hidden spam trap: leave it empty.
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [type, title, area, address, rent, availableFrom, contactName, contactPhone]
+              properties:
+                type:
+                  $ref: '#/components/schemas/ToletType'
+                title:
+                  type: string
+                  minLength: 5
+                  maxLength: 100
+                marketName:
+                  type: string
+                  maxLength: 80
+                floor:
+                  type: string
+                  maxLength: 20
+                area:
+                  type: string
+                  minLength: 2
+                  maxLength: 60
+                address:
+                  type: string
+                  minLength: 5
+                  maxLength: 200
+                rent:
+                  type: integer
+                  minimum: 100
+                  maximum: 9999999
+                  description: BDT per month
+                advance:
+                  type: integer
+                  minimum: 0
+                  maximum: 99999999
+                sizeSqft:
+                  type: integer
+                  minimum: 1
+                  maximum: 100000
+                availableFrom:
+                  type: string
+                  format: date
+                  description: YYYY-MM-DD, from today (Bangladesh time) up to one year ahead.
+                contactName:
+                  type: string
+                  minLength: 2
+                  maxLength: 80
+                contactPhone:
+                  type: string
+                  pattern: '^01[3-9]\d{8}$'
+                description:
+                  type: string
+                  maxLength: 1000
+                website:
+                  type: string
+                  description: Honeypot. Must stay empty.
+      responses:
+        '201':
+          description: Received; waiting for review.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [id, status]
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        enum: [PENDING]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/v1/me/tolets:
+    get:
+      tags: [To-let]
+      operationId: listMyTolets
+      summary: My to-let requests (any status, with the rejection reason)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: My requests, newest first (at most 100).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OwnTolet'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/tolets/{id}:
+    delete:
+      tags: [To-let]
+      operationId: deleteMyTolet
+      summary: Remove one of my to-let requests
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ToletId'
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/tolets:
+    get:
+      tags: [To-let, Admin]
+      operationId: adminListTolets
+      summary: To-let requests for review, newest first (everything, incl. the submitter)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ToletStatus'
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: One page of requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminTolet'
+                  meta:
+                    type: object
+                    required: [pagination]
+                    properties:
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/tolets/{id}:
+    patch:
+      tags: [To-let, Admin]
+      operationId: adminReviewTolet
+      summary: Approve or reject a to-let request (audited; the submitter is notified if they have an account)
+      description: Approval makes it public for 60 days. A reason (max 300) is required when rejecting. The same status again is 409.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ToletId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              additionalProperties: false
+              properties:
+                status:
+                  type: string
+                  enum: [APPROVED, REJECTED]
+                reason:
+                  type: string
+                  maxLength: 300
+      responses:
+        '200':
+          description: The reviewed request.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/OwnTolet'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  parameters:
+    ToletId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    ToletType:
+      type: string
+      enum: [SHOP, SHOWROOM, KIOSK, FOOD_COURT, WAREHOUSE]
+    ToletStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED]
+    Tolet:
+      type: object
+      required: [id, type, title, marketName, floor, area, address, rent, advance, sizeSqft, availableFrom, contactName, contactPhone, description, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/ToletType'
+        title:
+          type: string
+        marketName:
+          type: string
+          nullable: true
+        floor:
+          type: string
+          nullable: true
+        area:
+          type: string
+        address:
+          type: string
+        rent:
+          type: integer
+        advance:
+          type: integer
+          nullable: true
+        sizeSqft:
+          type: integer
+          nullable: true
+        availableFrom:
+          type: string
+          format: date
+          example: '2026-12-01'
+        contactName:
+          type: string
+        contactPhone:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ToletStatus'
+        createdAt:
+          type: string
+          format: date-time
+    OwnTolet:
+      allOf:
+        - $ref: '#/components/schemas/Tolet'
+        - type: object
+          required: [rejectionReason, expiresAt]
+          properties:
+            rejectionReason:
+              type: string
+              nullable: true
+            expiresAt:
+              type: string
+              format: date-time
+              nullable: true
+    AdminTolet:
+      allOf:
+        - $ref: '#/components/schemas/OwnTolet'
+        - type: object
+          required: [submitter, reviewedBy, reviewedAt]
+          properties:
+            submitter:
+              type: object
+              nullable: true
+              required: [id, name, email]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                email:
+                  type: string
+                  nullable: true
+            reviewedBy:
+              type: object
+              nullable: true
+              required: [id, name]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+            reviewedAt:
+              type: string
+              format: date-time
+              nullable: true

@@ -36,6 +36,8 @@ import shopProductRoutes from './modules/shopProducts/shopProducts.routes.js';
 import searchRoutes from './modules/search/search.routes.js';
 import bannerRoutes from './modules/banners/banners.routes.js';
 import dealRoutes from './modules/deals/deals.routes.js';
+import foodRoutes from './modules/food/food.routes.js';
+import toletRoutes from './modules/tolets/tolets.routes.js';
 export const app = express();
 
 // Behind Nginx or a load balancer: trust its X-Forwarded-For so rate limiting sees real client IPs
@@ -129,6 +131,8 @@ app.use('/api/v1', shopProductRoutes);
 app.use('/api/v1', searchRoutes);
 app.use('/api/v1', bannerRoutes);
 app.use('/api/v1', dealRoutes);
+app.use('/api/v1', foodRoutes);
+app.use('/api/v1', toletRoutes);
 
 
 

@@ -1,0 +1,491 @@
+paths:
+  /api/v1/food/items:
+    get:
+      tags: [Food corner]
+      operationId: listFoodItems
+      summary: The available food menu (vendors and admins)
+      description: >-
+        SHOP_OWNER, SHOP_STAFF or ADMIN; customers get 403, guests 401. Available items by sortOrder.
+        Sent with Cache-Control "private, no-store".
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The menu.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FoodItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/food/orders:
+    post:
+      tags: [Food corner]
+      operationId: createFoodOrder
+      summary: Order food (vendors only)
+      description: >-
+        SHOP_OWNER or SHOP_STAFF only. The server takes the price from the menu and calculates unitPrice and
+        total; any price, total or shopId in the body is ignored. shopId is the vendor's own shop. About 10
+        accepted orders per hour per user (429). Admins are notified.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemId, quantity, name, phone, address]
+              properties:
+                itemId:
+                  type: string
+                  format: uuid
+                quantity:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 80
+                phone:
+                  type: string
+                  pattern: '^01[3-9]\d{8}$'
+                address:
+                  type: string
+                  minLength: 5
+                  maxLength: 300
+                note:
+                  type: string
+                  maxLength: 300
+      responses:
+        '201':
+          description: The order, with the server's price.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FoodOrderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The item is not available right now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/v1/me/food-orders:
+    get:
+      tags: [Food corner]
+      operationId: listMyFoodOrders
+      summary: My food orders, newest first (vendors only)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The orders (at most 100).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FoodOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/food-orders:
+    get:
+      tags: [Food corner, Admin]
+      operationId: adminListFoodOrders
+      summary: All food orders, newest first, with the vendor and the vendor's shop
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/FoodOrderStatus'
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: One page of orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminFoodOrder'
+                  meta:
+                    type: object
+                    required: [pagination]
+                    properties:
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/food-orders/{id}:
+    patch:
+      tags: [Food corner, Admin]
+      operationId: adminUpdateFoodOrder
+      summary: Change a food order's status (audited as food_order.status_changed; the vendor is notified)
+      description: Allowed PENDING -> CONFIRMED or CANCELLED, CONFIRMED -> DELIVERED or CANCELLED; anything else is 409.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FoodId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              additionalProperties: false
+              properties:
+                status:
+                  $ref: '#/components/schemas/FoodOrderStatus'
+      responses:
+        '200':
+          description: The updated order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FoodOrderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/admin/food-items:
+    get:
+      tags: [Food corner, Admin]
+      operationId: adminListFoodItems
+      summary: The whole menu, including unavailable items
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Every item by sortOrder.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminFoodItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Food corner, Admin]
+      operationId: adminCreateFoodItem
+      summary: Add a menu item (audited as food_item.created)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/FoodItemInput'
+                - type: object
+                  required: [nameEn, nameBn, price]
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminFoodItemResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/food-items/{id}:
+    patch:
+      tags: [Food corner, Admin]
+      operationId: adminUpdateFoodItem
+      summary: Change a menu item (audited as food_item.updated)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FoodId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/FoodItemInput'
+                - type: object
+                  minProperties: 1
+      responses:
+        '200':
+          description: The updated item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminFoodItemResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Food corner, Admin]
+      operationId: adminDeleteFoodItem
+      summary: Delete a menu item that was never ordered (audited as food_item.deleted)
+      description: An item with orders cannot be deleted (409); set isAvailable to false instead.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FoodId'
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  parameters:
+    FoodId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    FoodOrderStatus:
+      type: string
+      enum: [PENDING, CONFIRMED, DELIVERED, CANCELLED]
+    FoodItem:
+      type: object
+      required: [id, nameEn, nameBn, descriptionEn, descriptionBn, price, emoji, isAvailable]
+      properties:
+        id:
+          type: string
+          format: uuid
+        nameEn:
+          type: string
+        nameBn:
+          type: string
+        descriptionEn:
+          type: string
+          nullable: true
+        descriptionBn:
+          type: string
+          nullable: true
+        price:
+          type: integer
+          description: BDT
+        emoji:
+          type: string
+          nullable: true
+        isAvailable:
+          type: boolean
+    AdminFoodItem:
+      allOf:
+        - $ref: '#/components/schemas/FoodItem'
+        - type: object
+          required: [sortOrder, createdAt, updatedAt]
+          properties:
+            sortOrder:
+              type: integer
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+    AdminFoodItemResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AdminFoodItem'
+    FoodItemInput:
+      type: object
+      additionalProperties: false
+      properties:
+        nameEn:
+          type: string
+          minLength: 1
+          maxLength: 60
+        nameBn:
+          type: string
+          minLength: 1
+          maxLength: 60
+        descriptionEn:
+          type: string
+          maxLength: 120
+          nullable: true
+        descriptionBn:
+          type: string
+          maxLength: 120
+          nullable: true
+        price:
+          type: integer
+          minimum: 1
+          maximum: 100000
+        emoji:
+          type: string
+          maxLength: 8
+          nullable: true
+        isAvailable:
+          type: boolean
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 1000
+    FoodOrder:
+      type: object
+      required: [id, itemId, itemName, unitPrice, quantity, total, name, phone, address, note, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        itemName:
+          type: string
+          description: Snapshot of the item name when ordered.
+        unitPrice:
+          type: integer
+          description: BDT, from the menu when ordered.
+        quantity:
+          type: integer
+        total:
+          type: integer
+          description: unitPrice x quantity, calculated by the server.
+        name:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        note:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/FoodOrderStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    FoodOrderResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/FoodOrder'
+    AdminFoodOrder:
+      allOf:
+        - $ref: '#/components/schemas/FoodOrder'
+        - type: object
+          required: [vendor, shop]
+          properties:
+            vendor:
+              type: object
+              required: [id, name]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+            shop:
+              type: object
+              nullable: true
+              required: [id, name, slug]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                slug:
+                  type: string

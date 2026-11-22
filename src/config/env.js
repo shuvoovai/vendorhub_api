@@ -60,6 +60,8 @@ const schema = z
         // DEVELOPMENT/TEST ONLY: new users with these email domains are verified at once (comma list).
     AUTO_VERIFY_EMAIL_DOMAINS: z.string().optional(),
     ACCOUNT_DELETION_GRACE_DAYS: z.coerce.number().int().min(7).max(90).default(30),
+    // Secret salt for hashing visitor IPs (to-let spam limits). Unset: derived from JWT_ACCESS_SECRET.
+    IP_HASH_SALT: z.string().min(16).optional(),
   })
   .superRefine((cfg, ctx) => {
         if (cfg.NODE_ENV === 'production' && cfg.AUTO_VERIFY_EMAIL_DOMAINS) {

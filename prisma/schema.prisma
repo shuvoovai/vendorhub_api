@@ -145,6 +145,9 @@ model User {
   returnRequests      ReturnRequest[]
   returnMessages      ReturnMessage[]
   flashDealsCreated FlashDeal[] @relation("FlashDealCreator")
+  foodOrders        FoodOrder[]
+  tolets            Tolet[]      @relation("ToletSubmitter")
+  toletsReviewed    Tolet[]      @relation("ToletReviewer")
 }
 
 model RefreshToken {
@@ -225,6 +228,7 @@ model Shop {
   owner            User               @relation("ShopOwner", fields: [ownerId], references: [id])
   market           Market?            @relation(fields: [marketId], references: [id])
   staff            ShopStaff[]
+  foodOrders       FoodOrder[]
   verifications    ShopVerification[]
   listings         ShopListing[]
   createdProducts  Product[]          @relation("ShopCreatedProducts")
@@ -757,4 +761,101 @@ model FlashDeal {
 
   @@index([listingId])
   @@index([isActive, endsAt])
+}
+
+// ───────────── FOOD CORNER (vendors only) ─────────────
+
+model FoodItem {
+  id            String      @id @default(uuid())
+  nameEn        String
+  nameBn        String
+  descriptionEn String?
+  descriptionBn String?
+  price         Int // BDT
+  emoji         String?
+  isAvailable   Boolean     @default(true)
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  orders        FoodOrder[]
+}
+
+enum FoodOrderStatus {
+  PENDING
+  CONFIRMED
+  DELIVERED
+  CANCELLED
+}
+
+model FoodOrder {
+  id        String          @id @default(uuid())
+  userId    String
+  shopId    String? // the vendor's shop, if any
+  itemId    String
+  itemName  String // snapshot
+  unitPrice Int // snapshot, from the server
+  quantity  Int
+  total     Int
+  name      String
+  phone     String
+  address   String
+  note      String?
+  status    FoodOrderStatus @default(PENDING)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shop      Shop?           @relation(fields: [shopId], references: [id], onDelete: SetNull)
+  item      FoodItem        @relation(fields: [itemId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+}
+
+// ───────────── SHOP TO-LET (public submissions, admin approval) ─────────────
+
+enum ToletType {
+  SHOP
+  SHOWROOM
+  KIOSK
+  FOOD_COURT
+  WAREHOUSE
+}
+
+enum ToletStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Tolet {
+  id              String      @id @default(uuid())
+  userId          String? // set when the submitter was logged in
+  type            ToletType
+  title           String
+  marketName      String?
+  floor           String?
+  area            String
+  address         String
+  rent            Int
+  advance         Int?
+  sizeSqft        Int?
+  availableFrom   DateTime    @db.Date
+  contactName     String
+  contactPhone    String
+  description     String?
+  status          ToletStatus @default(PENDING)
+  rejectionReason String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  expiresAt       DateTime? // set on approval (60 days)
+  submitterIpHash String? // salted HMAC of the IP, never the IP itself
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  user            User?       @relation("ToletSubmitter", fields: [userId], references: [id], onDelete: SetNull)
+  reviewedBy      User?       @relation("ToletReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([submitterIpHash, createdAt])
+  @@index([contactPhone, status])
+  @@index([userId])
 }

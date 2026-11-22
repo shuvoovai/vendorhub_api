@@ -6,7 +6,23 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { processImage } from '../src/lib/images.js';
 import { stageImage, removeImage, imageUrls } from '../src/lib/storage.js';
 
+// The seed DELETES every table first: never against a production database.
+if (process.env.NODE_ENV === 'production') {
+  console.error('Refusing to seed: NODE_ENV=production.');
+  process.exit(1);
+}
+
 const prisma = new PrismaClient();
+
+// ---------- food corner menu (vendors only) ----------
+const FOOD_ITEMS = [
+  ['Chicken Biryani', 'চিকেন বিরিয়ানি', 280, '🍛', 'Old Dhaka style, with egg', 'পুরান ঢাকার স্টাইল, ডিম সহ'],
+  ['Beef Tehari', 'বিফ তেহারি', 220, '🥘', 'Mustard oil, green chilli', 'সরিষার তেল, কাঁচা মরিচ'],
+  ['Fuchka (10 pcs)', 'ফুচকা (১০টি)', 80, '🥟', 'With tamarind water', 'তেঁতুলের টক সহ'],
+  ['Mutton Kacchi', 'মাটন কাচ্চি', 420, '🍲', 'Slow-cooked, with borhani', 'দমে রান্না, বোরহানি সহ'],
+  ['Chicken Shawarma', 'চিকেন শর্মা', 180, '🌯', 'Garlic sauce, fries', 'গার্লিক সস, ফ্রাই'],
+  ['Mango Lassi', 'ম্যাংগো লাচ্ছি', 120, '🥭', 'Fresh mango, yoghurt', 'তাজা আম, দই'],
+];
 
 // ---------- seed product photos ----------
 // The website only shows images from our own API (its Content-Security-Policy blocks other hosts),
@@ -52,6 +68,9 @@ async function clean() {
   await prisma.$transaction([
         prisma.idempotencyKey.deleteMany(),
         prisma.emailVerificationToken.deleteMany(),
+        prisma.foodOrder.deleteMany(),
+        prisma.foodItem.deleteMany(),
+        prisma.tolet.deleteMany(),
         prisma.flashDeal.deleteMany(),
         prisma.banner.deleteMany(),
         prisma.image.deleteMany(),
@@ -339,7 +358,15 @@ async function main() {
     data: { type: 'PRODUCT', userId: customer.id, shopId: techzone.id, productId: products[0].id, rating: 5, comment: 'Great phone.' },
   });
 
+  // ---------- Food corner menu ----------
+  await prisma.foodItem.createMany({
+    data: FOOD_ITEMS.map(([nameEn, nameBn, price, emoji, descriptionEn, descriptionBn], i) => ({
+      nameEn, nameBn, price, emoji, descriptionEn, descriptionBn, sortOrder: i,
+    })),
+  });
+
   const counts = {
+    foodItems: await prisma.foodItem.count(),
     users: await prisma.user.count(),
     shops: await prisma.shop.count(),
     products: await prisma.product.count(),

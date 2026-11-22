@@ -28,7 +28,7 @@ export async function shopTeamIds(shopId) {
 }
 
 // Every active admin.
-async function adminIds() {
+export async function adminIds() {
   const admins = await prisma.user.findMany({ where: { role: 'ADMIN', isActive: true }, select: { id: true } });
   return admins.map((a) => a.id);
 }
