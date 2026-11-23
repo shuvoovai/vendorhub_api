@@ -81,6 +81,29 @@ export async function notifyStatusChange(order, status, reason) {
   }
 }
 
+const ADMIN_STATUS_TEXT = { ...STATUS_TEXT, CANCELLED: 'was cancelled by Vendors Hub' };
+const PAYMENT_TEXT = { PAID: 'payment was received', REFUNDED: 'payment was refunded' };
+
+// After an admin changes an order: tell the customer and the shop's team.
+export async function notifyAdminOrderChange(order, { status, paymentStatus }) {
+  try {
+    const session = await prisma.checkoutSession.findUnique({
+      where: { id: order.checkoutId },
+      select: { userId: true },
+    });
+    const parts = [status && ADMIN_STATUS_TEXT[status], paymentStatus && PAYMENT_TEXT[paymentStatus]].filter(Boolean);
+    const message = {
+      type: 'ORDER_STATUS',
+      title: `Order ${order.orderNumber}: ${parts.join(', ')}`,
+      body: 'Updated by Vendors Hub. Open the order for details.',
+      data: { orderId: order.id, shopId: order.shopId, ...(status && { status }), ...(paymentStatus && { paymentStatus }) },
+    };
+    await notify([session?.userId, ...(await shopTeamIds(order.shopId))], message);
+  } catch (err) {
+    logger.error(err, 'could not send the admin order notification');
+  }
+}
+
 // After the customer cancels: tell that shop's team.
 export async function notifyCustomerCancel(order, reason) {
   try {

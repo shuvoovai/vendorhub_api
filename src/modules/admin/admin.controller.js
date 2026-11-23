@@ -1,4 +1,5 @@
 import * as adminService from './admin.service.js';
+import * as adminOrders from './adminOrders.service.js';
 
 export const listShops = async (req, res) => {
   const { items, pagination } = await adminService.listShops(req.validated);
@@ -16,4 +17,13 @@ export const sales = async (req, res) => {
 
 export const top = async (req, res) => {
   res.json({ success: true, data: await adminService.topReport(req.validated) });
+};
+
+export const listOrders = async (req, res) => {
+  const { items, pagination } = await adminOrders.listOrders(req.validated);
+  res.json({ success: true, data: items, meta: { pagination } });
+};
+
+export const updateOrder = async (req, res) => {
+  res.json({ success: true, data: await adminOrders.updateOrder(req.user, req.params.orderId, req.body) });
 };

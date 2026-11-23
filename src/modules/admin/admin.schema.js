@@ -29,3 +29,17 @@ export const topQuery = z.object({
   to: z.coerce.date().optional(),
   limit: z.coerce.number().int().min(1).max(20).default(5),
 });
+
+export const listOrdersQuery = z.object({
+  status: z.enum(['CONFIRMED', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', 'COMPLETED', 'CANCELLED']).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+export const updateOrderSchema = z
+  .object({
+    status: z.enum(['READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', 'COMPLETED', 'CANCELLED']).optional(),
+    paymentStatus: z.enum(['PAID', 'REFUNDED']).optional(),
+  })
+  .strict()
+  .refine((b) => b.status || b.paymentStatus, { message: 'Send status or paymentStatus' });

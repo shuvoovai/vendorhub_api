@@ -80,6 +80,7 @@ enum PaymentMethod {
   ONLINE
   PAY_AT_STORE
   CASH_ON_DELIVERY
+  BKASH
 }
 
 enum PaymentStatus {

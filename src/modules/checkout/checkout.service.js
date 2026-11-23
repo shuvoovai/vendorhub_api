@@ -13,7 +13,7 @@ const newOrderNumber = () => {
   return `VH-${day}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 };
 
-const orderInclude = {
+export const orderInclude = {
   shop: {
     select: {
       id: true,
@@ -30,7 +30,7 @@ const orderInclude = {
   items: { include: { listing: { select: { product: { select: { id: true, slug: true } } } } } },
 };
 
-const formatOrder = (o) => ({
+export const formatOrder = (o) => ({
   id: o.id,
   orderNumber: o.orderNumber,
   checkoutId: o.checkoutId,
@@ -236,6 +236,10 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
             // online orders get a payment record that the (mock) gateway completes
             ...(c.paymentMethod === 'ONLINE' && {
               payments: { create: [{ provider: 'mock', amount: total, status: 'PENDING' }] },
+            }),
+            // bKash: no gateway yet; an admin marks it paid by hand (see src/lib/bkash.js)
+            ...(c.paymentMethod === 'BKASH' && {
+              payments: { create: [{ provider: 'bkash', amount: total, status: 'PENDING' }] },
             }),
           },
           include: orderInclude,

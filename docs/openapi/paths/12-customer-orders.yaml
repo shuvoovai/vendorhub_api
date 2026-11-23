@@ -116,7 +116,7 @@ components:
           $ref: '#/components/schemas/OrderStatus'
         paymentMethod:
           type: string
-          enum: [ONLINE, PAY_AT_STORE, CASH_ON_DELIVERY]
+          enum: [ONLINE, PAY_AT_STORE, CASH_ON_DELIVERY, BKASH]
         paymentStatus:
           $ref: '#/components/schemas/PaymentStatus'
         deliveryMethod:

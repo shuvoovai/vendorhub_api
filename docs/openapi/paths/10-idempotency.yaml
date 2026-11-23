@@ -44,7 +44,7 @@ paths:
                         enum: [STORE_PICKUP, VENDOR_DELIVERY]
                       paymentMethod:
                         type: string
-                        enum: [ONLINE, PAY_AT_STORE, CASH_ON_DELIVERY]
+                        enum: [ONLINE, PAY_AT_STORE, CASH_ON_DELIVERY, BKASH]
                       deliveryAddress:
                         type: string
                         minLength: 10

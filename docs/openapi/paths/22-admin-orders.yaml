@@ -1,0 +1,121 @@
+paths:
+  /api/v1/admin/orders:
+    get:
+      tags: [Admin]
+      operationId: adminListOrders
+      summary: Orders the shops have accepted (every status except PLACED), newest first
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [CONFIRMED, READY_FOR_PICKUP, OUT_FOR_DELIVERY, COMPLETED, CANCELLED]
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminOrder'
+                  meta:
+                    type: object
+                    required: [pagination]
+                    properties:
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/admin/orders/{orderId}:
+    patch:
+      tags: [Admin]
+      operationId: adminUpdateOrder
+      summary: Move an order's status and/or payment status (audited; customer and shop are notified)
+      description: >-
+        status: CONFIRMED -> READY_FOR_PICKUP (pickup) or OUT_FOR_DELIVERY (delivery); those -> COMPLETED;
+        any non-final -> CANCELLED (stock is restored). paymentStatus: PENDING/FAILED -> PAID (not when the order
+        is or becomes CANCELLED); PAID -> REFUNDED only when the order is or becomes CANCELLED. Any other move is 409.
+        PLACED orders are 404 (the shop has not accepted them yet).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                status:
+                  type: string
+                  enum: [READY_FOR_PICKUP, OUT_FOR_DELIVERY, COMPLETED, CANCELLED]
+                paymentStatus:
+                  type: string
+                  enum: [PAID, REFUNDED]
+      responses:
+        '200':
+          description: The updated order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/AdminOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  schemas:
+    AdminOrder:
+      allOf:
+        - $ref: '#/components/schemas/CustomerOrder'
+        - type: object
+          required: [customer]
+          properties:
+            customer:
+              type: object
+              required: [id, name, phone]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                phone:
+                  type: string
+                  nullable: true

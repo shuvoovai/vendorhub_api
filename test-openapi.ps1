@@ -39,7 +39,7 @@ foreach ($p in $spec.paths.PSObject.Properties) {
     }
 }
 Write-Host "INFO  $($ops.Count) operations documented"
-Check 'all 176 operations are documented' $ops.Count 176
+Check 'all 178 operations are documented' $ops.Count 178
 Check 'returns are documented' ($ops -contains 'POST /api/v1/orders/{orderId}/returns') $true
 Check 'try-on is documented' ($ops -contains 'POST /api/v1/try-on') $true
 Check 'checkout is documented' ($ops -contains 'POST /api/v1/checkout') $true

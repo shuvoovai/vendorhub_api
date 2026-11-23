@@ -75,7 +75,7 @@ export async function restock(tx, orderId) {
 }
 
 // Everything that must happen when an order is cancelled (mock refund until a real gateway exists).
-async function cancelEffects(tx, order) {
+export async function cancelEffects(tx, order) {
   await restock(tx, order.id);
   if (order.paymentMethod === 'ONLINE' && order.paymentStatus === 'PAID') {
     await tx.subOrder.update({ where: { id: order.id }, data: { paymentStatus: 'REFUNDED' } });
@@ -162,7 +162,7 @@ export async function changeStatus(user, shopId, orderId, { status, reason }) {
       await tx.subOrder.update({ where: { id: orderId }, data: { completedAt: new Date() } });
     }
     // cash is collected when the customer receives the goods
-    if (status === 'COMPLETED' && order.paymentMethod !== 'ONLINE') {
+    if (status === 'COMPLETED' && ['PAY_AT_STORE', 'CASH_ON_DELIVERY'].includes(order.paymentMethod)) {
       await tx.subOrder.update({ where: { id: orderId }, data: { paymentStatus: 'PAID' } });
     }
     await logChange(tx, user.id, 'order.status_changed', orderId, order.status, status, reason);
