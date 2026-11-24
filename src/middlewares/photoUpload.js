@@ -22,14 +22,14 @@ export function receiveFileField(field) {
 // markets, products, shop logo and banner
 export const receivePhoto = receiveFileField('image');
 
-// Home page banners: one photo in "image" (max 3 MB), one optional video in "video" (MP4/WebM, max 20 MB),
-// plus up to 13 short text fields. These two routes are the only ones allowed about 25 MB per request.
+// Home page banners: one photo in "image" (max 3 MB) OR one video in "video" (MP4/WebM, max 20 MB),
+// plus up to 12 short text fields (both files at once is refused by the service). These two routes are the only ones allowed about 25 MB per request.
 const IMAGE_MAX = 3 * 1024 * 1024;
 const VIDEO_MAX = 20 * 1024 * 1024;
 const BANNER_REQUEST_MAX = 25 * 1024 * 1024;
 const bannerUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: VIDEO_MAX, files: 2, fields: 13, fieldSize: 1024, parts: 15 },
+  limits: { fileSize: VIDEO_MAX, files: 2, fields: 12, fieldSize: 1024, parts: 14 },
 });
 const bannerFields = bannerUpload.fields([
   { name: 'image', maxCount: 1 },

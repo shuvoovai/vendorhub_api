@@ -42,7 +42,6 @@ export const createBannerSchema = z
 export const updateBannerSchema = z
   .strictObject({
     ...Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v.optional()])),
-    removeVideo: bool.optional(), // "true": delete the video (the photo stays)
   })
   .refine(datesInOrder, ORDER);
 

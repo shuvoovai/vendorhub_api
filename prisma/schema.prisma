@@ -725,8 +725,8 @@ model EmailVerificationToken {
 // Home page slider. The image is one of our /media WebP files (the key; URLs are built, never stored).
 model Banner {
   id        String    @id @default(uuid())
-  imageKey  String    @unique
-  videoUrl  String? // public /media URL of the optional MP4/WebM (the image is its poster)
+  imageKey  String?   @unique // photo banner (WebP + thumb); null for a video banner
+  videoUrl  String? // video banner: public /media URL of the MP4/WebM. Exactly one of imageKey / videoKey is set.
   videoKey  String?   @unique // stored file name, e.g. "<uuid>.mp4"
   titleEn   String
   titleBn   String

@@ -6,11 +6,16 @@ import { detectVideo } from '../../lib/videos.js';
 
 const PUBLIC_LIMIT = 5;
 const NOT_FOUND = 'Banner not found';
+const ONE_FILE = 'Send exactly one file: a photo in "image" or a video in "video"';
+
+// A banner is a photo (imageKey) OR a video (videoKey + videoUrl), never both, never neither.
+const mediaType = (b) => (b.videoKey ? 'video' : 'image');
+const photoUrls = (b) => (b.imageKey ? imageUrls(b.imageKey) : { url: null, thumbUrl: null });
 
 // Only what the home page slider needs.
 const presentPublic = (b) => ({
   id: b.id,
-  imageUrl: imageUrls(b.imageKey).url,
+  imageUrl: photoUrls(b).url,
   videoUrl: b.videoUrl ?? null,
   titleEn: b.titleEn,
   titleBn: b.titleBn,
@@ -23,7 +28,7 @@ const presentPublic = (b) => ({
 
 const presentAdmin = (b) => {
   const { imageKey, videoKey, ...rest } = b;
-  const { url, thumbUrl } = imageUrls(imageKey);
+  const { url, thumbUrl } = photoUrls(b);
   return { ...rest, imageUrl: url, thumbUrl, videoUrl: b.videoUrl ?? null };
 };
 
@@ -48,80 +53,69 @@ export async function listAll() {
   return rows.map(presentAdmin);
 }
 
-// Processes and publishes the photo; returns its key and a cleanup for when the database write fails.
-async function publishPhoto(file) {
+// Checks (video: real type from the first bytes) and publishes the one file.
+// Returns the columns to set (the other kind is cleared) and a cleanup for when the database write fails.
+async function publishMedia(file, video) {
+  if (video) {
+    const ext = detectVideo(video.buffer);
+    if (!ext) throw new AppError(400, 'The video must be an MP4 or WebM file');
+    const { key, url } = await publishVideo(video.buffer, ext);
+    return { type: 'video', data: { videoKey: key, videoUrl: url, imageKey: null }, undo: () => removeVideo(key) };
+  }
   const processed = await processImage(file.buffer, 'HOME_BANNER');
   const staged = await stageImage(processed);
   await staged.commit();
-  return staged.key;
+  return { type: 'image', data: { imageKey: staged.key, videoKey: null, videoUrl: null }, undo: () => removeImage(staged.key) };
 }
 
-// Checks the real type from the first bytes before anything is written.
-function videoType(video) {
-  const ext = detectVideo(video.buffer);
-  if (!ext) throw new AppError(400, 'The video must be an MP4 or WebM file');
-  return ext;
-}
+// Deletes the files of a banner's old media (after the database already points elsewhere).
+const removeMediaFiles = (b) => Promise.all([removeImage(b.imageKey).catch(() => {}), removeVideo(b.videoKey).catch(() => {})]);
 
 export async function create(admin, input, file, video) {
-  if (!file) throw new AppError(400, 'Send exactly one photo in the multipart field "image"');
-  const ext = video ? videoType(video) : null;
-  const key = await publishPhoto(file);
-  let vid = null;
+  if (Boolean(file) === Boolean(video)) throw new AppError(400, ONE_FILE);
+  const media = await publishMedia(file, video);
   try {
-    if (ext) vid = await publishVideo(video.buffer, ext);
     const banner = await prisma.$transaction(async (tx) => {
       const sortOrder = input.sortOrder ?? (await tx.banner.count());
-      const b = await tx.banner.create({
-        data: { ...input, sortOrder, imageKey: key, ...(vid && { videoKey: vid.key, videoUrl: vid.url }) },
-      });
-      await audit(tx, admin.id, 'banner.created', b.id, { titleEn: b.titleEn, videoAdded: Boolean(vid) });
+      const b = await tx.banner.create({ data: { ...input, sortOrder, ...media.data } });
+      await audit(tx, admin.id, 'banner.created', b.id, { titleEn: b.titleEn, mediaType: media.type });
       return b;
     });
     return presentAdmin(banner);
   } catch (err) {
-    await removeImage(key).catch(() => {});
-    if (vid) await removeVideo(vid.key).catch(() => {});
+    await media.undo().catch(() => {});
     throw err;
   }
 }
 
-export async function update(admin, id, body, file, video) {
-  const { removeVideo: dropVideo, ...input } = body;
+export async function update(admin, id, input, file, video) {
+  if (file && video) throw new AppError(400, ONE_FILE);
   const current = await prisma.banner.findUnique({ where: { id } });
   if (!current) throw new AppError(404, NOT_FOUND);
-  if (Object.keys(input).length === 0 && !file && !video && !dropVideo) throw new AppError(400, 'Nothing to update');
-  if (video && dropVideo) throw new AppError(400, 'Send a new video or removeVideo, not both');
-  const ext = video ? videoType(video) : null;
+  if (Object.keys(input).length === 0 && !file && !video) throw new AppError(400, 'Nothing to update');
 
   const startsAt = input.startsAt !== undefined ? input.startsAt : current.startsAt;
   const endsAt = input.endsAt !== undefined ? input.endsAt : current.endsAt;
   if (startsAt && endsAt && endsAt <= startsAt) throw new AppError(400, 'endsAt must be after startsAt');
 
-  const key = file ? await publishPhoto(file) : null;
-  let vid = null;
+  const media = file || video ? await publishMedia(file, video) : null;
   let banner;
   try {
-    if (ext) vid = await publishVideo(video.buffer, ext);
-    const videoData = vid ? { videoKey: vid.key, videoUrl: vid.url } : dropVideo ? { videoKey: null, videoUrl: null } : {};
     banner = await prisma.$transaction(async (tx) => {
-      const b = await tx.banner.update({ where: { id }, data: { ...input, ...(key && { imageKey: key }), ...videoData } });
+      const b = await tx.banner.update({ where: { id }, data: { ...input, ...media?.data } });
       await audit(tx, admin.id, 'banner.updated', id, {
         fields: Object.keys(input),
-        imageReplaced: Boolean(key),
-        videoAdded: Boolean(vid),
-        videoRemoved: Boolean(current.videoKey && (vid || dropVideo)),
+        mediaType: mediaType(b),
+        mediaReplaced: Boolean(media),
+        ...(media && { previousMediaType: mediaType(current) }),
       });
       return b;
     });
   } catch (err) {
-    if (key) await removeImage(key).catch(() => {});
-    if (vid) await removeVideo(vid.key).catch(() => {});
+    if (media) await media.undo().catch(() => {});
     throw err;
   }
-  // old files, after success
-  if (key) await removeImage(current.imageKey).catch(() => {});
-  if ((vid || dropVideo) && current.videoKey) await removeVideo(current.videoKey).catch(() => {});
+  if (media) await removeMediaFiles(current); // old files, after success
   return presentAdmin(banner);
 }
 
@@ -144,8 +138,9 @@ export async function remove(admin, id) {
   if (!banner) throw new AppError(404, NOT_FOUND);
   await prisma.$transaction([
     prisma.banner.delete({ where: { id } }),
-    prisma.auditLog.create({ data: { actorId: admin.id, action: 'banner.deleted', entityType: 'Banner', entityId: id, meta: { titleEn: banner.titleEn } } }),
+    prisma.auditLog.create({
+      data: { actorId: admin.id, action: 'banner.deleted', entityType: 'Banner', entityId: id, meta: { titleEn: banner.titleEn, mediaType: mediaType(banner) } },
+    }),
   ]);
-  await removeImage(banner.imageKey).catch(() => {});
-  await removeVideo(banner.videoKey).catch(() => {});
+  await removeMediaFiles(banner);
 }
