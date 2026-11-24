@@ -728,8 +728,8 @@ model Banner {
   imageKey  String?   @unique // photo banner (WebP + thumb); null for a video banner
   videoUrl  String? // video banner: public /media URL of the MP4/WebM. Exactly one of imageKey / videoKey is set.
   videoKey  String?   @unique // stored file name, e.g. "<uuid>.mp4"
-  titleEn   String
-  titleBn   String
+  titleEn   String?
+  titleBn   String?
   textEn    String?
   textBn    String?
   ctaEn     String?

@@ -73,8 +73,8 @@ paths:
               allOf:
                 - $ref: '#/components/schemas/BannerFields'
                 - type: object
-                  required: [titleEn, titleBn, href]
-                  description: Exactly one of image / video.
+                  required: [href]
+                  description: Exactly one of image / video. Every text field is optional (an empty string means null).
                   properties:
                     image:
                       type: string
@@ -312,8 +312,10 @@ components:
           description: Video banner - our own API origin, /media/<uuid>.mp4 or .webm (Range requests supported). Null for a photo banner.
         titleEn:
           type: string
+          nullable: true
         titleBn:
           type: string
+          nullable: true
         textEn:
           type: string
           nullable: true

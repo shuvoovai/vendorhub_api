@@ -120,6 +120,22 @@ Check 'create photo banner: 201' $r.status 201
 $photoId = $r.json.data.id
 Check 'photo banner: videoUrl null' ($null -eq $r.json.data.videoUrl) $true
 Check 'photo banner: thumbUrl set' ([bool]$r.json.data.thumbUrl) $true
+$r = Send 'POST' '/admin/banners' $admin @($mp4) @{ href = '/deals' }
+Check 'video-only banner with no text: 201' $r.status 201
+$bareId = $r.json.data.id
+Check 'no text: titleEn null' ($null -eq $r.json.data.titleEn) $true
+Check 'no text: titleBn null' ($null -eq $r.json.data.titleBn) $true
+Check 'no text: ctaEn null' ($null -eq $r.json.data.ctaEn) $true
+Check 'public: titleEn null' ($null -eq @((Call 'GET' '/banners' $null $null).json.data | Where-Object { $_.id -eq $bareId })[0].titleEn) $true
+Check 'title over 80 still: 400' (Send 'POST' '/admin/banners' $admin @($mp4) @{ href = '/'; titleEn = ('t' * 81) }).status 400
+Check 'cta over 30 still: 400' (Call 'PATCH' "/admin/banners/$bareId" $admin @{ ctaBn = ('c' * 31) }).status 400
+$r = Call 'PATCH' "/admin/banners/$bareId" $admin @{ titleEn = 'Now titled'; titleBn = 'BN' }
+Check 'add titles later: 200' $r.json.data.titleEn 'Now titled'
+$r = Call 'PATCH' "/admin/banners/$bareId" $admin @{ titleEn = ''; titleBn = '' }
+Check 'empty string clears titleEn' ($null -eq $r.json.data.titleEn) $true
+Check 'empty string clears titleBn' ($null -eq $r.json.data.titleBn) $true
+Check 'JSON null clears too' ($null -eq (Call 'PATCH' "/admin/banners/$bareId" $admin @{ textEn = $null }).json.data.textEn) $true
+Check 'delete bare banner' (Call 'DELETE' "/admin/banners/$bareId" $admin $null).status 200
 
 # ---- 3. serving: type, ranges, headers ----
 $h = Head $v1 $null

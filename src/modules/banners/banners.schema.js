@@ -19,8 +19,8 @@ const date = z.preprocess(blankToNull, z.coerce.date().nullable().optional());
 const sortOrder = z.coerce.number().int().min(0).max(1000);
 
 const fields = {
-  titleEn: text(80),
-  titleBn: text(80),
+  titleEn: optionalText(80),
+  titleBn: optionalText(80),
   textEn: optionalText(160),
   textBn: optionalText(160),
   ctaEn: optionalText(30),
