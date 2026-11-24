@@ -1,7 +1,9 @@
 # run-all-tests.ps1
-# Resets the demo data, then runs every test suite and prints one summary.
-# Run from the project root while "npm run dev" is running in another terminal.
+# Resets the demo data IN THE TEST DATABASE (vh_test), then runs every test suite and prints one summary.
+# The real database (vendors_hub) and the real uploads are never touched. Start the API on the test
+# database in another terminal first:   . .\test-env.ps1; npm run dev
 # Keep rate limiting OFF (the development default): the suites together send more requests than the limit allows.
+. "$PSScriptRoot\test-env.ps1"
 try { Invoke-WebRequest -Uri 'http://localhost:4000/health' -UseBasicParsing | Out-Null }
 catch {
     Write-Host 'The API is not running. Start it with "npm run dev" in another terminal first.' -ForegroundColor Red
@@ -13,8 +15,8 @@ if (-not (Test-Path 'prisma/seed.js')) {
     exit 1
 }
 
-Write-Host 'Resetting the demo data (prisma/seed.js) ...'
-& node --env-file=.env prisma/seed.js | Out-Null
+Write-Host 'Resetting the demo data (prisma/seed.js --demo) ...'
+& node --env-file=.env prisma/seed.js --demo | Out-Null # --demo: never your exported data
 if ($LASTEXITCODE -ne 0) {
     Write-Host 'Seeding failed. Run "node --env-file=.env prisma/seed.js" by hand to see the error.' -ForegroundColor Red
     exit 1
@@ -25,7 +27,7 @@ $suites = @(
     'test-users-staff.ps1', 'test-my-shops.ps1', 'test-shop-products.ps1', 'test-password-reset.ps1', 'test-uploads.ps1',
     'test-returns.ps1', 'test-disputes.ps1', 'test-notifications.ps1', 'test-shop-photos.ps1', 'test-notify-events.ps1',
     'test-try-on.ps1', 'test-cookie-auth.ps1', 'test-email-verification.ps1', 'test-idempotency.ps1', 'test-shop-images.ps1',
-    'test-image-search.ps1', 'test-market-image.ps1', 'test-shop-contact.ps1', 'test-market-districts.ps1', 'test-banners.ps1', 'test-deals.ps1', 'test-stock-visibility.ps1', 'test-following-feed.ps1', 'test-food.ps1', 'test-tolets.ps1', 'test-tolet-inquiries.ps1', 'test-banner-video.ps1', 'test-guest-cart.ps1', 'test-admin-orders.ps1', 'test-openapi.ps1', 'test-security.ps1', 'test-account-deletion.ps1'
+    'test-image-search.ps1', 'test-market-image.ps1', 'test-shop-contact.ps1', 'test-market-districts.ps1', 'test-banners.ps1', 'test-deals.ps1', 'test-stock-visibility.ps1', 'test-following-feed.ps1', 'test-food.ps1', 'test-tolets.ps1', 'test-tolet-inquiries.ps1', 'test-banner-video.ps1', 'test-variants.ps1', 'test-guest-cart.ps1', 'test-admin-orders.ps1', 'test-openapi.ps1', 'test-security.ps1', 'test-account-deletion.ps1'
 )
 $results = @()
 foreach ($s in $suites) {

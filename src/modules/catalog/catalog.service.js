@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { thumbFor } from '../../lib/storage.js';
 import { runningDeals } from '../../lib/deals.js';
+import { variantLabel, variantAvailability, basePrice } from '../../lib/variants.js';
 import { visibleStockQty } from '../../lib/stockVisibility.js';
 const AVAILABILITY_RANK = { IN_STOCK: 4, AVAILABLE: 3, LIMITED: 2, OUT_OF_STOCK: 1 };
 
@@ -97,12 +98,13 @@ export async function bestListingIds(productIds, extra = []) {
     ...extra,
   ];
   const rows = await prisma.$queryRaw`
-    SELECT DISTINCT ON (l."productId") l."productId", l.id
+    SELECT DISTINCT ON (l."productId") l."productId", l.id,
+           EXISTS (SELECT 1 FROM "ListingVariant" v WHERE v."listingId" = l.id AND v."isActive" = true) AS "hasVariants"
     FROM "ShopListing" l
     JOIN "Shop" s ON s.id = l."shopId"
     WHERE ${Prisma.join(conds, ' AND ')}
     ORDER BY l."productId", l.price ASC, l."createdAt" DESC, l.id ASC`;
-  return new Map(rows.map((r) => [r.productId, r.id]));
+  return new Map(rows.map((r) => [r.productId, { id: r.id, hasVariants: r.hasVariants }]));
 }
 
 export async function listProducts(query) {
@@ -226,7 +228,8 @@ export async function listProducts(query) {
       shopCount: r.shopCount,
       availability: RANK_TO_AVAILABILITY[r.availabilityRank],
       bargainAvailable: r.bargainAvailable,
-      bestListingId: best.get(p.id) ?? null,
+      bestListingId: best.get(p.id)?.id ?? null,
+      hasVariants: best.get(p.id)?.hasVariants ?? false,
       createdAt: p.createdAt,
     };
   });
@@ -268,6 +271,12 @@ export async function getProduct(slug, listingId, viewer = null) {
               market: { select: { id: true, name: true, slug: true } },
             },
           },
+          // only offered combinations; their stock is never sent, only an availability
+          variants: {
+            where: { isActive: true },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true, options: true, price: true, stockQty: true },
+          },
         },
       },
     },
@@ -305,6 +314,14 @@ export async function getProduct(slug, listingId, viewer = null) {
     availability: l.availability,
     stockQty: visibleStockQty(viewer, l),
     bargainEnabled: l.bargainEnabled,
+    variantOptions: l.variants.length ? l.variantOptions : [],
+    variants: l.variants.map((v) => ({
+      id: v.id,
+      options: v.options,
+      label: variantLabel(l.variantOptions, v.options),
+      price: basePrice(l, v), // final price before deals and bargains
+      availability: variantAvailability(l, v),
+    })),
     discountPercent: product.msrp ? Math.round((1 - l.price / product.msrp) * 100) : null,
     shop: { ...l.shop, rating: ratings.get(l.shop.id) ?? { average: null, count: 0 } },
   });

@@ -32,7 +32,7 @@ export const get = async (req, res) => send(res, await cartService.getCart(await
 export const addItem = async (req, res) => {
   let owner = await ownerOf(req);
   if (!owner) {
-    await cartService.checkListing(req.body.listingId); // no empty guest cart for an invalid add
+    await cartService.checkListing(req.body.listingId, req.body.variantId); // no empty guest cart for an invalid add
     const created = await cartService.createGuestCart();
     owner = created.owner;
     res.cookie(GUEST_COOKIE, created.token, guestCookieOptions());

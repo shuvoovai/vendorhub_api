@@ -1,0 +1,97 @@
+paths: {}
+
+components:
+  schemas:
+    VariantOption:
+      type: object
+      required: [name, values]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 30
+          example: Color
+        values:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 30
+          example: [Red, Blue]
+    VariantOptions:
+      type: array
+      maxItems: 3
+      description: >-
+        At most 3 options; names unique (any letter case), values unique per option. [] means no variants.
+      items:
+        $ref: '#/components/schemas/VariantOption'
+    VariantInput:
+      type: object
+      required: [options]
+      additionalProperties: false
+      description: >-
+        One combination. options has exactly one value for each option, taken from that option's values
+        (letter case is ignored and the option's own spelling is stored). Combinations must be unique.
+      properties:
+        options:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 30
+          example: { Color: Red, Size: M }
+        price:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: null or left out = the listing price.
+        stockQty:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Required when the listing counts stock (its stockQty is not null); must be empty when it does not.
+        isActive:
+          type: boolean
+          default: true
+    OwnerVariant:
+      type: object
+      required: [id, options, price, stockQty, isActive]
+      properties:
+        id:
+          type: string
+          format: uuid
+        options:
+          type: object
+          additionalProperties:
+            type: string
+        price:
+          type: integer
+          nullable: true
+        stockQty:
+          type: integer
+          nullable: true
+        isActive:
+          type: boolean
+    PublicVariant:
+      type: object
+      description: An offered combination. Never includes a stock number.
+      required: [id, options, label, price, availability]
+      properties:
+        id:
+          type: string
+          format: uuid
+        options:
+          type: object
+          additionalProperties:
+            type: string
+          example: { Color: Red, Size: M }
+        label:
+          type: string
+          example: Red / M
+        price:
+          type: integer
+          description: The final price before deals and bargains (variant price, else the listing price).
+        availability:
+          $ref: '#/components/schemas/Availability'

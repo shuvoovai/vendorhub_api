@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16
+    image: pgvector/pgvector:0.8.0-pg16 # PostgreSQL 16 + pgvector (the visual search migrations need it)
     container_name: vendors-hub-db
     restart: unless-stopped
     env_file: .env.production
@@ -22,9 +22,12 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:4000:4000"
-    command: sh -c "npx prisma migrate deploy && node src/server.js"
+    volumes:
+      - uploads:/app/uploads # uploaded files (media, private documents) survive rebuilds
+    # migrations, then the exported seed data (prisma/seed-data, if it was present at build time) on the
+    # FIRST start only: --if-empty skips it once the database has users, and it never deletes anything.
+    command: sh -c "npx prisma migrate deploy && node prisma/seed-import.js --if-empty && node src/server.js"
 
 volumes:
   pgdata:
-  uploads:/app/uploads
-  
+  uploads:

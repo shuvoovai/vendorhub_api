@@ -713,6 +713,9 @@ components:
           description: >-
             The listing "add to cart" uses: the cheapest active, in-stock listing of an active, verified shop
             (ties: newest), among the listings this list counts (e.g. only that shop on a shop page). Null if none.
+        hasVariants:
+          type: boolean
+          description: True when the bestListingId listing has active variants (the cart then needs a variantId).
         createdAt:
           type: string
           format: date-time
@@ -783,6 +786,13 @@ components:
           $ref: '#/components/schemas/Availability'
         bargainEnabled:
           type: boolean
+        variantOptions:
+          $ref: '#/components/schemas/VariantOptions'
+        variants:
+          type: array
+          description: Only active combinations; [] when the listing has no variants. No stock numbers.
+          items:
+            $ref: '#/components/schemas/PublicVariant'
         discountPercent:
           type: integer
           nullable: true

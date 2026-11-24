@@ -9,3 +9,8 @@ models-cache/
 !.env.example
 !.env.production.example
 .claude/settings.local.json
+
+# exported real data (accounts, bcrypt hashes, media): never in the public repo
+prisma/seed-data/
+uploads-test/
+backups/

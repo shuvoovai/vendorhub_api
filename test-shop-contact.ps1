@@ -61,7 +61,7 @@ function Need($value, $what) {
 }
 
 function Keys($obj) { return (@($obj.PSObject.Properties.Name) | Sort-Object) -join ',' }
-function Sql($q) { return (($q | docker exec -i vendors-hub-db psql -U vendors -d vendors_hub -t -A) -join '').Trim() }
+function Sql($q) { return (($q | docker exec -i vendors-hub-db psql -U vendors -d vh_test -t -A) -join '').Trim() }
 # PATCH only the links of the test shop and return the status
 function Links($links) { return (Call 'PATCH' "/shops/$shopId" $own @{ socialLinks = $links }).status }
 

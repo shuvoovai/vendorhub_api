@@ -24,7 +24,22 @@ With the server running:
 powershell -ExecutionPolicy Bypass -File .\run-all-tests.ps1
 ```
 
-This resets the demo data and runs every suite.
+This resets the demo data (`prisma/seed.js --demo`, never your exported data) and runs every suite.
+
+## Seed data from your own database
+
+Accounts, shops, products and images you added through the site can become the seed data:
+
+```powershell
+npm run seed:export   # current database -> prisma/seed-data/*.json + prisma/seed-data/media/ (read-only)
+npm run seed          # DELETES everything, then rebuilds from prisma/seed-data/ (demo data when there is no export)
+```
+
+- The export holds real emails, phone numbers and bcrypt password hashes (never plain passwords). `prisma/seed-data/` is git-ignored: **do not commit it** (the repository is public). Copy the folder to another machine yourself.
+- Left out: tokens, sessions, verification codes, audit logs, carts, orders, payments, returns, reviews, bargains, notifications, shop verification cases and private documents.
+- After a seed, run `node --env-file=.env scripts/backfill-fingerprints.mjs` to rebuild the visual search fingerprints.
+- `npm run seed:demo` always builds the demo data; `npm run seed:import` adds missing exported rows without deleting anything.
+- Docker (`docker compose -f docker-compose.prod.yml up -d --build`): when `prisma/seed-data/` exists at build time it goes into the image, and `prisma/seed-import.js --if-empty` loads it on the first start (empty database only; it never deletes or overwrites). Uploaded files live in the named volume `uploads`.
 
 ## Structure
 

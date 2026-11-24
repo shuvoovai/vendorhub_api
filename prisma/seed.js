@@ -5,6 +5,7 @@ import path from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { processImage } from '../src/lib/images.js';
 import { stageImage, removeImage, imageUrls } from '../src/lib/storage.js';
+import { hasSeedData, importSeedData } from './seed-data-lib.js';
 
 // The seed DELETES every table first: never against a production database.
 if (process.env.NODE_ENV === 'production') {
@@ -89,6 +90,7 @@ async function clean() {
     prisma.subOrder.deleteMany(),
     prisma.checkoutSession.deleteMany(),
     prisma.cartItem.deleteMany(),
+    prisma.listingVariant.deleteMany(),
     prisma.cart.deleteMany(),
     // bargains, reviews, shop relations
     prisma.bargainEvent.deleteMany(),
@@ -118,6 +120,15 @@ async function main() {
   const oldPhotos = await prisma.image.findMany({ where: SEED_PHOTO, select: { key: true } });
   await clean();
   await Promise.all(oldPhotos.map((p) => removeImage(p.key).catch(() => {})));
+
+  // An export (scripts/export-seed.js) is the source of truth: it already holds the demo rows it was made
+  // from, with their ids. --demo (used by run-all-tests.ps1) ignores it and builds the fresh demo data.
+  if (!process.argv.includes('--demo') && (await hasSeedData())) {
+    const { counts, files } = await importSeedData(prisma, process.env.UPLOAD_DIR ?? './uploads', { mode: 'update' });
+    console.log('Seed finished from prisma/seed-data:', { ...counts, mediaFiles: files });
+    console.log('Run scripts/backfill-fingerprints.mjs to rebuild the visual search fingerprints.');
+    return;
+  }
 
   const passwordHash = await bcrypt.hash('Password123!', 10);
 

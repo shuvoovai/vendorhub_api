@@ -112,23 +112,23 @@ enum ProductSource {
 // ───────────── USERS & AUTH ─────────────
 
 model User {
-  id           String   @id @default(uuid())
-  email        String?  @unique
-  phone        String?  @unique
-  passwordHash String
-  name         String
-  avatarUrl    String?
-  role         UserRole @default(CUSTOMER)
-  isActive     Boolean  @default(true)
+  id              String    @id @default(uuid())
+  email           String?   @unique
+  phone           String?   @unique
+  passwordHash    String
+  name            String
+  avatarUrl       String?
+  role            UserRole  @default(CUSTOMER)
+  isActive        Boolean   @default(true)
   emailVerifiedAt DateTime? @default(now()) // new registrations set null until the link is opened
-  
+
   deletionRequestedAt    DateTime?
   deletionScheduledFor   DateTime? // set = account is waiting to be deleted (grace period)
   deletionReason         String?
   deletionReminderSentAt DateTime?
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   refreshTokens       RefreshToken[]
   ownedShops          Shop[]               @relation("ShopOwner")
@@ -145,10 +145,10 @@ model User {
   fileUploads         FileUpload[]
   returnRequests      ReturnRequest[]
   returnMessages      ReturnMessage[]
-  flashDealsCreated FlashDeal[] @relation("FlashDealCreator")
-  foodOrders        FoodOrder[]
-  tolets            Tolet[]      @relation("ToletSubmitter")
-  toletsReviewed    Tolet[]      @relation("ToletReviewer")
+  flashDealsCreated   FlashDeal[]          @relation("FlashDealCreator")
+  foodOrders          FoodOrder[]
+  tolets              Tolet[]              @relation("ToletSubmitter")
+  toletsReviewed      Tolet[]              @relation("ToletReviewer")
 }
 
 model RefreshToken {
@@ -196,35 +196,35 @@ model Market {
 }
 
 model Shop {
-  id                String            @id @default(uuid())
-  ownerId           String
-  marketId          String?
-  name              String
-  slug              String            @unique
-  description       String?
-  logoUrl           String?
-  bannerUrl         String?
-  logoImageId       String?           @unique
-  bannerImageId     String?           @unique
-  hiddenForOwnerDeletion Boolean @default(false) // hidden because its owner asked to delete the account
-  logoImage         Image?            @relation("ShopLogo", fields: [logoImageId], references: [id], onDelete: SetNull)
-  bannerImage       Image?            @relation("ShopBanner", fields: [bannerImageId], references: [id], onDelete: SetNull)
-  levelFloor        String? // "Level 3"
-  shopNumber        String? // "Shop 42"
-  addressLine       String
-  phone             String? // public shop phone, BD mobile 01XXXXXXXXX (required for new shops)
-  whatsapp          String? // same format
-  socialLinks       Json? // { facebook, instagram, tiktok, youtube, website }: validated https links
-  latitude          Float?
-  longitude         Float?
-  verificationLevel VerificationLevel @default(UNVERIFIED)
-  lastAuditedAt     DateTime?
-  avgResponseMins   Int?
-  isActive          Boolean           @default(true)
-  supportsDelivery  Boolean           @default(true)
-  supportsPickup    Boolean           @default(true)
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  id                     String            @id @default(uuid())
+  ownerId                String
+  marketId               String?
+  name                   String
+  slug                   String            @unique
+  description            String?
+  logoUrl                String?
+  bannerUrl              String?
+  logoImageId            String?           @unique
+  bannerImageId          String?           @unique
+  hiddenForOwnerDeletion Boolean           @default(false) // hidden because its owner asked to delete the account
+  logoImage              Image?            @relation("ShopLogo", fields: [logoImageId], references: [id], onDelete: SetNull)
+  bannerImage            Image?            @relation("ShopBanner", fields: [bannerImageId], references: [id], onDelete: SetNull)
+  levelFloor             String? // "Level 3"
+  shopNumber             String? // "Shop 42"
+  addressLine            String
+  phone                  String? // public shop phone, BD mobile 01XXXXXXXXX (required for new shops)
+  whatsapp               String? // same format
+  socialLinks            Json? // { facebook, instagram, tiktok, youtube, website }: validated https links
+  latitude               Float?
+  longitude              Float?
+  verificationLevel      VerificationLevel @default(UNVERIFIED)
+  lastAuditedAt          DateTime?
+  avgResponseMins        Int?
+  isActive               Boolean           @default(true)
+  supportsDelivery       Boolean           @default(true)
+  supportsPickup         Boolean           @default(true)
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
 
   owner            User               @relation("ShopOwner", fields: [ownerId], references: [id])
   market           Market?            @relation(fields: [marketId], references: [id])
@@ -242,7 +242,7 @@ model Shop {
 
   @@index([marketId])
   @@index([verificationLevel])
-    @@index([name(ops: raw("gin_trgm_ops"))], type: Gin) // fast ILIKE search on shop names (pg_trgm)
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin) // fast ILIKE search on shop names (pg_trgm)
 }
 
 model ShopStaff {
@@ -315,16 +315,15 @@ model AuditLog {
 // ───────────── CATALOG (hybrid: canonical product + shop listing) ─────────────
 
 model Category {
-  id       String     @id @default(uuid())
-  name     String
-  slug     String     @unique
-  parentId String?
+  id           String     @id @default(uuid())
+  name         String
+  slug         String     @unique
+  parentId     String?
   virtualTryOn Boolean    @default(false) // admin switch: customers may try products of this category on
-  sortOrder Int        @default(0) // admin-chosen order of top-level categories on the home page
-  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
-  children Category[] @relation("CategoryTree")
-  products Product[]
-  
+  sortOrder    Int        @default(0) // admin-chosen order of top-level categories on the home page
+  parent       Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children     Category[] @relation("CategoryTree")
+  products     Product[]
 }
 
 model Brand {
@@ -334,22 +333,22 @@ model Brand {
 }
 
 model Product {
-  id          String   @id @default(uuid())
-  brandId     String?
-  categoryId  String
-  title       String
-  slug        String   @unique
-  description String?
-  specs       Json? // {ram:"8GB", storage:"128GB", color:"Awesome Navy"}
-  msrp        Int?
-  images      String[]
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  source          ProductSource @default(ADMIN)
+  id              String                      @id @default(uuid())
+  brandId         String?
+  categoryId      String
+  title           String
+  slug            String                      @unique
+  description     String?
+  specs           Json? // {ram:"8GB", storage:"128GB", color:"Awesome Navy"}
+  msrp            Int?
+  images          String[]
+  isActive        Boolean                     @default(true)
+  createdAt       DateTime                    @default(now())
+  source          ProductSource               @default(ADMIN)
   createdByShopId String?
   lockedAt        DateTime? // set when an admin edits or merges the product: the creating shop can no longer change it
-    titleEmbedding  Unsupported("vector(512)")? // CLIP text fingerprint of the title (visual search)
-  createdByShop   Shop?         @relation("ShopCreatedProducts", fields: [createdByShopId], references: [id], onDelete: SetNull)
+  titleEmbedding  Unsupported("vector(512)")? // CLIP text fingerprint of the title (visual search)
+  createdByShop   Shop?                       @relation("ShopCreatedProducts", fields: [createdByShopId], references: [id], onDelete: SetNull)
   photos          Image[]
 
   brand    Brand?        @relation(fields: [brandId], references: [id])
@@ -374,19 +373,41 @@ model ShopListing {
   stockVisibility StockVisibility   @default(HIDDEN)
   bargainEnabled  Boolean           @default(false)
   minOfferPercent Int               @default(92) // lowest acceptable offer as % of price
+  // [{ name: "Color", values: ["Red", "Blue"] }, ...], at most 3 options; [] = no variants
+  variantOptions  Json              @default("[]")
   isActive        Boolean           @default(true)
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
-  shop       Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  product    Product     @relation(fields: [productId], references: [id])
+  shop       Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product    Product          @relation(fields: [productId], references: [id])
   bargains   Bargain[]
   cartItems  CartItem[]
   orderItems OrderItem[]
   flashDeals FlashDeal[]
+  variants   ListingVariant[]
 
   @@unique([shopId, productId])
   @@index([productId, price])
+}
+
+// One combination of a listing's variant options, e.g. { "Color": "Red", "Size": "M" }.
+// Never deleted while referenced: combinations that are no longer offered are set inactive.
+model ListingVariant {
+  id         String      @id @default(uuid())
+  listingId  String
+  options    Json // { optionName: value }
+  optionsKey String // lowercased values in option order joined by "|", e.g. "red|m"
+  price      Int? // null = the listing price
+  stockQty   Int? // counted when the listing counts stock
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  listing    ShopListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@unique([listingId, optionsKey])
 }
 
 // ───────────── BARGAINING ─────────────
@@ -442,16 +463,19 @@ model Cart {
 }
 
 model CartItem {
-  id        String      @id @default(uuid())
+  id        String          @id @default(uuid())
   cartId    String
   listingId String
+  variantId String? // required when the listing has active variants
   bargainId String? // set when an accepted bargain price applies
-  quantity  Int         @default(1)
-  cart      Cart        @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  listing   ShopListing @relation(fields: [listingId], references: [id])
-  bargain   Bargain?    @relation(fields: [bargainId], references: [id])
+  quantity  Int             @default(1)
+  cart      Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  listing   ShopListing     @relation(fields: [listingId], references: [id])
+  variant   ListingVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  bargain   Bargain?        @relation(fields: [bargainId], references: [id])
 
-  @@unique([cartId, listingId])
+  // NULLS NOT DISTINCT (set in the migration): one variant-less line per listing too
+  @@unique([cartId, listingId, variantId])
 }
 
 // ───────────── SPLIT CHECKOUT / ORDERS ─────────────
@@ -495,15 +519,18 @@ model SubOrder {
 }
 
 model OrderItem {
-  id         String      @id @default(uuid())
-  subOrderId String
-  listingId  String
-  title      String // snapshot
-  unitPrice  Int // snapshot (bargained price if applicable)
-  quantity   Int
-  bargained  Boolean     @default(false)
-  subOrder   SubOrder    @relation(fields: [subOrderId], references: [id], onDelete: Cascade)
-  listing    ShopListing @relation(fields: [listingId], references: [id])
+  id           String          @id @default(uuid())
+  subOrderId   String
+  listingId    String
+  title        String // snapshot
+  unitPrice    Int // snapshot (bargained price if applicable)
+  quantity     Int
+  bargained    Boolean         @default(false)
+  variantId    String?
+  variantLabel String? // snapshot, e.g. "Red / M"
+  subOrder     SubOrder        @relation(fields: [subOrderId], references: [id], onDelete: Cascade)
+  listing      ShopListing     @relation(fields: [listingId], references: [id])
+  variant      ListingVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
 
   @@index([subOrderId])
 }
@@ -674,24 +701,24 @@ model ShopPhoto {
   @@index([shopId, sortOrder])
 }
 
-
 // A processed public image: files <key>.webp and <key>-thumb.webp in the media folder.
 // No URL or file name is stored; URLs are built from the key.
 model Image {
-  id        String   @id @default(uuid())
-  key       String   @unique
-  width     Int
-  height    Int
-  purpose   String // e.g. "MARKET"
-  ownerId   String?
-  createdAt DateTime @default(now())
-  market    Market?
-  productId String?
-  sortOrder Int      @default(0)
-    embedding  Unsupported("vector(512)")? // CLIP image fingerprint (product photos)
-  product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
-  shopLogo   Shop?    @relation("ShopLogo")
-  shopBanner Shop?    @relation("ShopBanner")
+  id         String                      @id @default(uuid())
+  key        String                      @unique
+  width      Int
+  height     Int
+  purpose    String // e.g. "MARKET"
+  ownerId    String?
+  createdAt  DateTime                    @default(now())
+  market     Market?
+  productId  String?
+  sortOrder  Int                         @default(0)
+  embedding  Unsupported("vector(512)")? // CLIP image fingerprint (product photos)
+  product    Product?                    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  shopLogo   Shop?                       @relation("ShopLogo")
+  shopBanner Shop?                       @relation("ShopBanner")
+
   @@index([productId, sortOrder])
 }
 
@@ -715,8 +742,6 @@ model IdempotencyKey {
   @@index([createdAt])
 }
 
-
-
 // Email verification links: only the SHA-256 of the token is stored; 24 hours; single use.
 model EmailVerificationToken {
   id        String    @id @default(uuid())
@@ -728,6 +753,7 @@ model EmailVerificationToken {
 
   @@index([userId])
 }
+
 // Home page slider. The image is one of our /media WebP files (the key; URLs are built, never stored).
 model Banner {
   id        String    @id @default(uuid())
@@ -837,7 +863,7 @@ enum ToletStatus {
 }
 
 model Tolet {
-  id              String      @id @default(uuid())
+  id              String         @id @default(uuid())
   userId          String? // set when the submitter was logged in
   type            ToletType
   title           String
@@ -848,20 +874,20 @@ model Tolet {
   rent            Int
   advance         Int?
   sizeSqft        Int?
-  availableFrom   DateTime    @db.Date
+  availableFrom   DateTime       @db.Date
   contactName     String
   contactPhone    String
   description     String?
-  status          ToletStatus @default(PENDING)
+  status          ToletStatus    @default(PENDING)
   rejectionReason String?
   reviewedById    String?
   reviewedAt      DateTime?
   expiresAt       DateTime? // set on approval (60 days)
   submitterIpHash String? // salted HMAC of the IP, never the IP itself
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  user            User?       @relation("ToletSubmitter", fields: [userId], references: [id], onDelete: SetNull)
-  reviewedBy      User?       @relation("ToletReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user            User?          @relation("ToletSubmitter", fields: [userId], references: [id], onDelete: SetNull)
+  reviewedBy      User?          @relation("ToletReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
   inquiries       ToletInquiry[]
 
   @@index([status, createdAt])

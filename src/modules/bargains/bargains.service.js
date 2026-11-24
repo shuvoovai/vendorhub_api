@@ -392,7 +392,7 @@ export async function declineOffer(user, id) {
 }
 
 // Puts ONE unit into the cart with the agreed price attached.
-export async function addToCart(user, id) {
+export async function addToCart(user, id, { variantId } = {}) {
   const { b, actor } = await loadForActor(user, id);
   if (actor !== 'CUSTOMER') throw new AppError(403, 'Only the customer can add this to a cart');
   if (effectiveStatus(b) !== 'ACCEPTED') {
@@ -402,15 +402,25 @@ export async function addToCart(user, id) {
   if (!l.isActive || !l.shop.isActive) throw new AppError(409, 'This listing is no longer available');
   if (l.availability === 'OUT_OF_STOCK') throw new AppError(409, 'This item is out of stock');
 
+  // The bargain is per listing; a listing with variants still needs the variant chosen for the cart line.
+  const variantCount = await prisma.listingVariant.count({ where: { listingId: l.id, isActive: true } });
+  let variant = null;
+  if (variantCount > 0) {
+    if (!variantId) throw new AppError(400, 'Choose a variant (variantId) for this item');
+    variant = await prisma.listingVariant.findFirst({ where: { id: variantId, listingId: l.id, isActive: true } });
+    if (!variant) throw new AppError(404, 'Variant not found');
+    if (variant.stockQty === 0) throw new AppError(409, 'This item is out of stock');
+  } else if (variantId) {
+    throw new AppError(400, 'This item has no variants: leave variantId out');
+  }
+
   const cart = await prisma.cart.upsert({
     where: { userId: user.id },
     update: {},
     create: { userId: user.id },
   });
-  await prisma.cartItem.upsert({
-    where: { cartId_listingId: { cartId: cart.id, listingId: l.id } },
-    update: { quantity: 1, bargainId: b.id },
-    create: { cartId: cart.id, listingId: l.id, quantity: 1, bargainId: b.id },
-  });
+  const line = await prisma.cartItem.findFirst({ where: { cartId: cart.id, listingId: l.id, variantId: variant?.id ?? null } });
+  if (line) await prisma.cartItem.update({ where: { id: line.id }, data: { quantity: 1, bargainId: b.id } });
+  else await prisma.cartItem.create({ data: { cartId: cart.id, listingId: l.id, variantId: variant?.id ?? null, quantity: 1, bargainId: b.id } });
   return getCart({ userId: user.id });
 }

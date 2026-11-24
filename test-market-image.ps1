@@ -140,11 +140,12 @@ $stamp = Get-Date -Format 'yyyyMMddHHmmss'
 $reg = Call 'POST' '/auth/register' $null @{ name = 'Rate Tester'; email = "rate$stamp@vendorshub.test"; password = 'Password123!' }
 $fresh = $reg.json.data.accessToken
 $ok = 0
-for ($i = 1; $i -le 20; $i++) {
+$limit = if ($env:UPLOAD_RATE_LIMIT_MAX) { [int]$env:UPLOAD_RATE_LIMIT_MAX } else { 20 } # the server's limit (test-env.ps1 may raise it)
+for ($i = 1; $i -le $limit; $i++) {
     if ((Send "$base/uploads?purpose=PUBLIC_IMAGE" 'POST' $fresh @('file=valid.jpg;type=image/jpeg')).status -eq 201) { $ok++ }
 }
-Check '20 uploads are accepted' $ok 20
-Check 'the 21st upload is refused with 429' (Send "$base/uploads?purpose=PUBLIC_IMAGE" 'POST' $fresh @('file=valid.jpg;type=image/jpeg')).status 429
+Check "$limit uploads are accepted" $ok $limit
+Check 'the next upload is refused with 429' (Send "$base/uploads?purpose=PUBLIC_IMAGE" 'POST' $fresh @('file=valid.jpg;type=image/jpeg')).status 429
 
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''

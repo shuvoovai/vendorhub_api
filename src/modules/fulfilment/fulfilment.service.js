@@ -50,6 +50,7 @@ const formatForShop = (o) => ({
     quantity: i.quantity,
     lineTotal: i.unitPrice * i.quantity,
     bargained: i.bargained,
+    variantLabel: i.variantLabel ?? null,
   })),
   nextStatuses: allowedNext(o),
 });
@@ -58,6 +59,13 @@ const formatForShop = (o) => ({
 export async function restock(tx, orderId) {
   const items = await tx.orderItem.findMany({ where: { subOrderId: orderId } });
   for (const item of items) {
+    // the variant's own stock first (when it is counted)
+    if (item.variantId) {
+      await tx.listingVariant.updateMany({
+        where: { id: item.variantId, stockQty: { not: null } },
+        data: { stockQty: { increment: item.quantity } },
+      });
+    }
     const listing = await tx.shopListing.findUnique({
       where: { id: item.listingId },
       select: { stockQty: true },

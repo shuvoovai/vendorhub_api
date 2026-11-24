@@ -71,6 +71,17 @@ paths:
                   nullable: true
                 stockVisibility:
                   $ref: '#/components/schemas/StockVisibility'
+                variantOptions:
+                  $ref: '#/components/schemas/VariantOptions'
+                variants:
+                  type: array
+                  maxItems: 200
+                  description: >-
+                    Send together with variantOptions. Upserted by combination: existing ids are kept, combinations
+                    not sent become inactive (never deleted), [] and [] turn variants off. At least one must be active.
+                    With counted stock the listing's stockQty becomes the sum of the active variants' stock.
+                  items:
+                    $ref: '#/components/schemas/VariantInput'
                 bargainEnabled:
                   type: boolean
                   default: false
@@ -133,6 +144,17 @@ paths:
                   nullable: true
                 stockVisibility:
                   $ref: '#/components/schemas/StockVisibility'
+                variantOptions:
+                  $ref: '#/components/schemas/VariantOptions'
+                variants:
+                  type: array
+                  maxItems: 200
+                  description: >-
+                    Send together with variantOptions. Upserted by combination: existing ids are kept, combinations
+                    not sent become inactive (never deleted), [] and [] turn variants off. At least one must be active.
+                    With counted stock the listing's stockQty becomes the sum of the active variants' stock.
+                  items:
+                    $ref: '#/components/schemas/VariantInput'
                 bargainEnabled:
                   type: boolean
                 minOfferPercent:
@@ -254,6 +276,13 @@ paths:
                 listingId:
                   type: string
                   format: uuid
+                variantId:
+                  type: string
+                  format: uuid
+                  description: >-
+                    Required when the listing has active variants (400 without it; 404 when it is not an active variant
+                    of this listing); must be left out for a listing without variants (400). Price and stock come from
+                    the variant. Each (listing, variant) is its own cart line.
                 quantity:
                   type: integer
                   minimum: 1
@@ -949,6 +978,17 @@ paths:
           schema:
             type: string
             format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                variantId:
+                  type: string
+                  format: uuid
+                  description: The bargain is per listing; a listing with active variants still needs the variant here (400 without it).
       responses:
         '200':
           description: The updated cart.
@@ -1701,6 +1741,13 @@ components:
           type: integer
         isActive:
           type: boolean
+        variantOptions:
+          $ref: '#/components/schemas/VariantOptions'
+        variants:
+          type: array
+          description: Every combination, active ones first, with its stock.
+          items:
+            $ref: '#/components/schemas/OwnerVariant'
         product:
           type: object
           additionalProperties: true
@@ -1720,6 +1767,9 @@ components:
         (dealApplied true, dealEndsAt set; only while deal units are left for that quantity) and an accepted bargain
         (bargainApplied). Checkout charges the same price. Each item also has stockQty: the number only when the
         listing's stockVisibility allows this user, else null; a quantity above the real stock gets 409 without the number.
+        Each item has variant ({ id, label } such as "Red / M", or null); a variant line uses the variant's price and
+        stock. problem is one of UNAVAILABLE, OUT_OF_STOCK, INSUFFICIENT_STOCK, VARIANT_REQUIRED (the listing got
+        variants after the line was added: remove it and add a variant) or null.
       additionalProperties: true
       properties:
         shops:
@@ -1745,7 +1795,9 @@ components:
           $ref: '#/components/schemas/Cart'
     Order:
       type: object
-      description: One shop's part of a checkout (a sub-order).
+      description: >-
+        One shop's part of a checkout (a sub-order). Each item has variantLabel (e.g. "Red / M", a snapshot taken at
+        checkout) or null; checkout takes the variant's stock and the listing total, a cancel gives both back.
       additionalProperties: true
       properties:
         id:

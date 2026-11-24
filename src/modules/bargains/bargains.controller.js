@@ -33,7 +33,7 @@ export const decline = async (req, res) => {
 };
 
 export const addToCart = async (req, res) => {
-  res.json({ success: true, data: await bargainService.addToCart(req.user, req.params.id) });
+  res.json({ success: true, data: await bargainService.addToCart(req.user, req.params.id, { variantId: typeof req.body?.variantId === 'string' ? req.body.variantId : undefined }) });
 };
 
 export const shopInbox = async (req, res) => {

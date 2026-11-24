@@ -85,7 +85,8 @@ async function similarProducts(buffer) {
       thumbnail: r.image ? thumbFor(r.image) : null,
       lowestPrice: r.lowest,
       shopCount: r.shops,
-      bestListingId: best.get(r.id) ?? null,
+      bestListingId: best.get(r.id)?.id ?? null,
+      hasVariants: best.get(r.id)?.hasVariants ?? false,
       match: photoScore >= titleScore ? 'photo' : 'title',
       score: Math.round(Math.max(photoScore, titleScore) * 1000) / 1000,
     };

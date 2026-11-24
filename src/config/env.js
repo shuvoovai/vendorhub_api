@@ -23,6 +23,7 @@ const schema = z
     RATE_LIMIT_WINDOW_MINUTES: z.coerce.number().positive().default(15),
     RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().positive().default(300),
     RATE_LIMIT_AUTH_MAX: z.coerce.number().int().positive().default(10),
+    UPLOAD_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20), // accepted uploads per user per 10 minutes
     // mail and links
     APP_URL: z.string().url().default('http://localhost:3000'), // the frontend address used in reset links
     // log = write mails to the log and logs/outbox.jsonl (development and tests)

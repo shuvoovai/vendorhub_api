@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { runningDeals, unitPriceFor } from '../../lib/deals.js';
 import { loadViewer, visibleStockQty } from '../../lib/stockVisibility.js';
+import { variantLabel, basePrice } from '../../lib/variants.js';
 
 const MAX_QTY_PER_LINE = 10;
 const DAY = 24 * 60 * 60 * 1000;
@@ -64,19 +65,27 @@ export async function purgeStaleGuestCarts() {
 
 // ---------- shared rules ----------
 
+// The stock a line is limited by: the variant's when it has one, else the listing's (null = not counted).
+export const lineStock = (listing, variant) => (variant ? variant.stockQty : listing.stockQty);
+
 // stockQty is private: we enforce it but never reveal the number.
-function assertQuantity(listing, qty) {
+function assertQuantity(listing, qty, variant = null) {
   if (qty > MAX_QTY_PER_LINE) {
     throw new AppError(400, `You can buy at most ${MAX_QTY_PER_LINE} of one item at a time`);
   }
-  if (listing.stockQty !== null && qty > listing.stockQty) {
+  const stock = lineStock(listing, variant);
+  if (stock !== null && qty > stock) {
     throw new AppError(409, 'Not enough stock for that quantity');
   }
 }
 
+const variantSelect = { select: { id: true, options: true, price: true, stockQty: true, isActive: true } };
+const activeVariantCount = { _count: { select: { variants: { where: { isActive: true } } } } };
+
 // 404 (not 403) for someone else's item, so item ids cannot be probed
 async function findOwnItem(owner, itemId) {
-  const item = owner && (await prisma.cartItem.findFirst({ where: { id: itemId, cart: cartWhere(owner) }, include: { listing: true } }));
+  const item =
+    owner && (await prisma.cartItem.findFirst({ where: { id: itemId, cart: cartWhere(owner) }, include: { listing: true, variant: variantSelect } }));
   if (!item) throw new AppError(404, 'Cart item not found');
   return item;
 }
@@ -94,8 +103,10 @@ export async function getCart(owner) {
             include: {
               product: { select: { id: true, slug: true, title: true, images: true, msrp: true } },
               shop: { select: shopSelect },
+              ...activeVariantCount,
             },
           },
+          variant: variantSelect,
           bargain: { select: { status: true, agreedPrice: true, customerId: true } },
         },
       },
@@ -110,11 +121,14 @@ export async function getCart(owner) {
 
   for (const item of cart?.items ?? []) {
     const l = item.listing;
+    const v = item.variant;
+    const stock = lineStock(l, v);
 
     let problem = null;
-    if (!l.isActive || !l.shop.isActive) problem = 'UNAVAILABLE';
-    else if (l.availability === 'OUT_OF_STOCK') problem = 'OUT_OF_STOCK';
-    else if (l.stockQty !== null && item.quantity > l.stockQty) problem = 'INSUFFICIENT_STOCK';
+    if (!l.isActive || !l.shop.isActive || (v && !v.isActive)) problem = 'UNAVAILABLE';
+    else if (!v && l._count.variants > 0) problem = 'VARIANT_REQUIRED'; // variants were added after this line
+    else if (l.availability === 'OUT_OF_STOCK' || stock === 0) problem = 'OUT_OF_STOCK';
+    else if (stock !== null && item.quantity > stock) problem = 'INSUFFICIENT_STOCK';
 
     // An accepted bargain for this customer overrides the listing price (guests never have one)
     const bargainApplied = Boolean(
@@ -123,7 +137,7 @@ export async function getCart(owner) {
     // the lowest of: listing price, running flash deal, accepted bargain (never more than the listing price)
     const deal = deals.get(l.id);
     const { unitPrice, dealApplied } = unitPriceFor({
-      listingPrice: l.price,
+      listingPrice: basePrice(l, v), // the variant price when it has one
       deal,
       quantity: item.quantity,
       bargainPrice: bargainApplied ? item.bargain.agreedPrice : null,
@@ -138,6 +152,7 @@ export async function getCart(owner) {
     group.items.push({
       id: item.id,
       listingId: l.id,
+      variant: v ? { id: v.id, label: variantLabel(l.variantOptions, v.options) } : null,
       quantity: item.quantity,
       product: {
         id: l.product.id,
@@ -174,44 +189,52 @@ export async function getCart(owner) {
   };
 }
 
-// A listing that can be put in a cart, or a 404/409.
-async function buyableListing(listingId) {
+// A listing (and variant) that can be put in a cart, or a 400/404/409.
+// A listing with active variants needs a variantId of one of them; a listing without variants must not get one.
+async function buyableListing(listingId, variantId) {
   const listing = await prisma.shopListing.findUnique({
     where: { id: listingId },
-    include: { shop: { select: { isActive: true } } },
+    include: { shop: { select: { isActive: true } }, ...activeVariantCount },
   });
   if (!listing || !listing.isActive || !listing.shop.isActive) {
     throw new AppError(404, 'Listing not found');
   }
-  if (listing.availability === 'OUT_OF_STOCK') {
+  let variant = null;
+  if (listing._count.variants > 0) {
+    if (!variantId) throw new AppError(400, 'Choose a variant (variantId) for this item');
+    variant = await prisma.listingVariant.findFirst({ where: { id: variantId, listingId, isActive: true }, ...variantSelect });
+    if (!variant) throw new AppError(404, 'Variant not found');
+  } else if (variantId) {
+    throw new AppError(400, 'This item has no variants: leave variantId out');
+  }
+  if (listing.availability === 'OUT_OF_STOCK' || lineStock(listing, variant) === 0) {
     throw new AppError(409, 'This item is out of stock');
   }
-  return listing;
+  return { listing, variant };
 }
 
 /** Checks the listing first (so a guest cart is only created for a valid add). */
 export const checkListing = buyableListing;
 
-export async function addItem(owner, { listingId, quantity }) {
-  const listing = await buyableListing(listingId);
+export async function addItem(owner, { listingId, variantId, quantity }) {
+  const { listing, variant } = await buyableListing(listingId, variantId);
   const cart = owner.userId
     ? await prisma.cart.upsert({ where: { userId: owner.userId }, update: {}, create: { userId: owner.userId } })
     : { id: owner.cartId };
-  const existing = await prisma.cartItem.findUnique({
-    where: { cartId_listingId: { cartId: cart.id, listingId } },
-  });
+  // one line per (listing, variant); findFirst because variantId may be null
+  const existing = await prisma.cartItem.findFirst({ where: { cartId: cart.id, listingId, variantId: variant?.id ?? null } });
 
-  // adding the same listing again increases its quantity
+  // adding the same listing (and variant) again increases its quantity
   const newQty = (existing?.quantity ?? 0) + quantity;
   if (existing?.bargainId && newQty > 1) {
     throw new AppError(400, 'A bargained price applies to one unit only');
   }
-  assertQuantity(listing, newQty);
+  assertQuantity(listing, newQty, variant);
 
   if (existing) {
     await prisma.cartItem.update({ where: { id: existing.id }, data: { quantity: newQty } });
   } else {
-    await prisma.cartItem.create({ data: { cartId: cart.id, listingId, quantity: newQty } });
+    await prisma.cartItem.create({ data: { cartId: cart.id, listingId, variantId: variant?.id ?? null, quantity: newQty } });
   }
   return getCart(owner);
 }
@@ -222,7 +245,7 @@ export async function updateItem(owner, itemId, { quantity }) {
     throw new AppError(400, 'A bargained price applies to one unit only');
   }
   // lowering the quantity is always allowed; raising it is checked against stock
-  if (quantity > item.quantity) assertQuantity(item.listing, quantity);
+  if (quantity > item.quantity) assertQuantity(item.listing, quantity, item.variant);
   await prisma.cartItem.update({ where: { id: itemId }, data: { quantity } });
   return getCart(owner);
 }
@@ -252,7 +275,7 @@ export async function mergeGuestCart(userId, guest) {
   return prisma.$transaction(async (tx) => {
     const items = await tx.cartItem.findMany({
       where: { cartId: guest.cartId },
-      include: { listing: { include: { shop: { select: { isActive: true } } } } },
+      include: { listing: { include: { shop: { select: { isActive: true } }, ...activeVariantCount } }, variant: variantSelect },
     });
     // claim the guest cart first: a parallel merge waits on this row and then deletes nothing
     const { count } = await tx.cart.deleteMany({ where: { id: guest.cartId, userId: null } });
@@ -263,19 +286,22 @@ export async function mergeGuestCart(userId, guest) {
     let skipped = 0;
     for (const g of items) {
       const l = g.listing;
-      const cap = Math.min(MAX_QTY_PER_LINE, l.stockQty ?? MAX_QTY_PER_LINE);
-      if (!l.isActive || !l.shop.isActive || l.availability === 'OUT_OF_STOCK' || cap < 1) {
+      const v = g.variant;
+      const cap = Math.min(MAX_QTY_PER_LINE, lineStock(l, v) ?? MAX_QTY_PER_LINE);
+      const variantOk = v ? v.isActive : l._count.variants === 0;
+      if (!l.isActive || !l.shop.isActive || !variantOk || l.availability === 'OUT_OF_STOCK' || cap < 1) {
         skipped++;
         continue;
       }
-      const existing = await tx.cartItem.findUnique({ where: { cartId_listingId: { cartId: cart.id, listingId: l.id } } });
+      // the same line = same listing AND same variant
+      const existing = await tx.cartItem.findFirst({ where: { cartId: cart.id, listingId: l.id, variantId: v?.id ?? null } });
       if (existing?.bargainId) {
         skipped++; // a bargained line stays at one unit
         continue;
       }
       const quantity = Math.min(cap, (existing?.quantity ?? 0) + g.quantity);
       if (existing) await tx.cartItem.update({ where: { id: existing.id }, data: { quantity } });
-      else await tx.cartItem.create({ data: { cartId: cart.id, listingId: l.id, quantity } });
+      else await tx.cartItem.create({ data: { cartId: cart.id, listingId: l.id, variantId: v?.id ?? null, quantity } });
       merged++;
     }
     return { merged, skipped };

@@ -4,6 +4,7 @@ import { AppError } from '../../lib/errors.js';
 import { env } from '../../config/env.js';
 import { deriveAvailability } from '../../lib/availability.js';
 import { runningDeals, unitPriceFor, claimDealUnits } from '../../lib/deals.js';
+import { variantLabel, basePrice } from '../../lib/variants.js';
 import { notifyNewOrders } from '../notifications/notifications.events.js';
 
 const DELIVERY_FEE = 60; // taka, charged once per shop that delivers
@@ -53,6 +54,7 @@ export const formatOrder = (o) => ({
     quantity: i.quantity,
     lineTotal: i.unitPrice * i.quantity,
     bargained: i.bargained,
+    variantLabel: i.variantLabel ?? null,
   })),
 });
 
@@ -78,8 +80,10 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
                   shop: {
                     select: { id: true, name: true, isActive: true, supportsDelivery: true, supportsPickup: true },
                   },
+                  _count: { select: { variants: { where: { isActive: true } } } },
                 },
               },
+              variant: { select: { id: true, options: true, price: true, stockQty: true, isActive: true } },
               bargain: { select: { status: true, agreedPrice: true, customerId: true } },
             },
           },
@@ -102,10 +106,13 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
       const deals = await runningDeals(tx, cart.items.map((i) => i.listingId));
       for (const item of cart.items) {
         const l = item.listing;
+        const v = item.variant;
+        const stock = v ? v.stockQty : l.stockQty; // a variant line is limited by the variant's stock
         let problem = null;
-        if (!l.isActive || !l.shop.isActive) problem = 'UNAVAILABLE';
-        else if (l.availability === 'OUT_OF_STOCK') problem = 'OUT_OF_STOCK';
-        else if (l.stockQty !== null && item.quantity > l.stockQty) problem = 'INSUFFICIENT_STOCK';
+        if (!l.isActive || !l.shop.isActive || (v && !v.isActive)) problem = 'UNAVAILABLE';
+        else if (!v && l._count.variants > 0) problem = 'VARIANT_REQUIRED';
+        else if (l.availability === 'OUT_OF_STOCK' || stock === 0) problem = 'OUT_OF_STOCK';
+        else if (stock !== null && item.quantity > stock) problem = 'INSUFFICIENT_STOCK';
         if (problem) {
           problems.push({ listingId: l.id, title: l.product.title, problem });
           continue;
@@ -120,7 +127,7 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
         // the lowest of: listing price, running flash deal, accepted bargain (never more than the listing price)
         const deal = deals.get(l.id);
         const { unitPrice, dealApplied } = unitPriceFor({
-          listingPrice: l.price,
+          listingPrice: basePrice(l, v), // the variant price when it has one
           deal,
           quantity: item.quantity,
           bargainPrice: bargained ? item.bargain.agreedPrice : null,
@@ -134,6 +141,9 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
           quantity: item.quantity,
           bargained,
           stockQty: l.stockQty,
+          variantId: v?.id ?? null,
+          variantStockQty: v ? v.stockQty : null,
+          variantLabel: v ? variantLabel(l.variantOptions, v.options) : null,
           dealId: dealApplied ? deal.id : null,
         });
       }
@@ -174,6 +184,14 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
       //    customers buy the last unit at the same time: one of them gets 409.
       for (const { lines } of byShop.values()) {
         for (const line of lines) {
+          // a variant line: take the variant's stock first (same race-safe condition)
+          if (line.variantId && line.variantStockQty !== null) {
+            const vTaken = await tx.listingVariant.updateMany({
+              where: { id: line.variantId, isActive: true, stockQty: { gte: line.quantity } },
+              data: { stockQty: { decrement: line.quantity } },
+            });
+            if (vTaken.count !== 1) throw new AppError(409, `Not enough stock for ${line.title}`);
+          }
           if (line.stockQty === null) continue; // the shop does not track a number for this listing
           const taken = await tx.shopListing.updateMany({
             where: { id: line.listingId, stockQty: { gte: line.quantity } },
@@ -225,12 +243,14 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
             paymentMethod: c.paymentMethod,
             paymentStatus: 'PENDING',
             items: {
-              create: lines.map(({ listingId, title, unitPrice, quantity, bargained }) => ({
+              create: lines.map(({ listingId, title, unitPrice, quantity, bargained, variantId, variantLabel: label }) => ({
                 listingId,
                 title,
                 unitPrice,
                 quantity,
                 bargained,
+                variantId,
+                variantLabel: label, // snapshot: stays even if the variant changes later
               })),
             },
             // online orders get a payment record that the (mock) gateway completes

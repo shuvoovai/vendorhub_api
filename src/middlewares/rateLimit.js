@@ -33,7 +33,7 @@ export const failedAttemptLimiter = make(env.RATE_LIMIT_AUTH_MAX, { skipSuccessf
 // before any heavy work. Must run AFTER authenticate, because it counts per user.
 export const uploadLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  limit: 20,
+  limit: env.UPLOAD_RATE_LIMIT_MAX,
   skipFailedRequests: true,
   keyGenerator: (req) => `upload:${req.user.id}`,
   standardHeaders: 'draft-7',

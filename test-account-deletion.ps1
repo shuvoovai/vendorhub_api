@@ -20,7 +20,7 @@ function Call($method, $path, $token, $body) {
         return @{ status = [int]$_.Exception.Response.StatusCode; json = $j }
     }
 }
-function Sql($q) { return (($q | docker exec -i vendors-hub-db psql -U vendors -d vendors_hub -t -A) -join '').Trim() }
+function Sql($q) { return (($q | docker exec -i vendors-hub-db psql -U vendors -d vh_test -t -A) -join '').Trim() }
 try { Invoke-WebRequest 'http://localhost:4000/health' -UseBasicParsing | Out-Null } catch { Write-Host 'The API is not running.' -ForegroundColor Red; exit 1 }
 
 $stamp = Get-Date -Format 'yyyyMMddHHmmss'

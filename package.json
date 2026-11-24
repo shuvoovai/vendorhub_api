@@ -7,6 +7,10 @@
   "scripts": {
     "dev": "node --watch --env-file=.env src/server.js",
     "start": "node src/server.js",
+    "seed": "node --env-file=.env prisma/seed.js",
+    "seed:demo": "node --env-file=.env prisma/seed.js --demo",
+    "seed:export": "node --env-file=.env scripts/export-seed.js",
+    "seed:import": "node --env-file=.env prisma/seed-import.js",
     "seed:deals": "node --env-file=.env scripts/seed-flash-deals.mjs"
   },
   "keywords": [],

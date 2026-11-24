@@ -73,7 +73,7 @@ Check 'resend for a verified user says so' (Call 'POST' '/auth/resend-verificati
 # ---- 4. an expired link ----
 $u2 = Register 2
 $tok2 = LinkToken $u2.email
-"UPDATE `"EmailVerificationToken`" SET `"expiresAt`" = now() - interval '1 hour' WHERE `"tokenHash`" = '$(Sha256 $tok2)';" | docker exec -i vendors-hub-db psql -U vendors -d vendors_hub | Out-Null
+"UPDATE `"EmailVerificationToken`" SET `"expiresAt`" = now() - interval '1 hour' WHERE `"tokenHash`" = '$(Sha256 $tok2)';" | docker exec -i vendors-hub-db psql -U vendors -d vh_test | Out-Null
 Check 'an expired link: 400' (Call 'POST' '/auth/verify-email' $null @{ token = $tok2 }).status 400
 Check 'the user stays unverified' (Call 'GET' '/auth/me' $u2.token $null).json.data.emailVerified $false
 

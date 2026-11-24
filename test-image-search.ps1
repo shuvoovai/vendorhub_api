@@ -8,7 +8,9 @@ function Check($name, $actual, $expected) {
 }
 try { Invoke-WebRequest 'http://localhost:4000/health' -UseBasicParsing | Out-Null } catch { Write-Host 'The API is not running.' -ForegroundColor Red; exit 1 }
 # never spend real AI quota in tests
-if (Select-String -Path .env -Pattern '^\s*SEARCH_IMAGE_MODE\s*=\s*gemini' -Quiet) {
+# the environment (test-env.ps1) wins over .env, as it does for the server
+$geminiInFile = (-not $env:SEARCH_IMAGE_MODE) -and (Select-String -Path .env -Pattern '^\s*SEARCH_IMAGE_MODE\s*=\s*gemini' -Quiet)
+if ($env:SEARCH_IMAGE_MODE -eq 'gemini' -or $geminiInFile) {
     Write-Host 'STOP: SEARCH_IMAGE_MODE=gemini in .env. Set it to mock (and restart) before running this test.' -ForegroundColor Red
     exit 1
 }
