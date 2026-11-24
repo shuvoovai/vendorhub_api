@@ -194,8 +194,14 @@ paths:
     get:
       tags: [Cart]
       operationId: getCart
-      summary: My cart, grouped by shop, with live prices and problems flagged
+      description: >-
+        Logged in (Bearer): the user's cart. Guest: the cart named by the httpOnly cookie "vh_guest_cart";
+        without a (known) cookie an empty cart is returned and nothing is created. A cart id is never read
+        from the body, query or a header. An invalid Bearer token is 401 (never a silent guest cart).
+        Sent with Cache-Control "private, no-store".
+      summary: My cart (or the guest cart), grouped by shop, with live prices and problems flagged
       security:
+        - {}
         - bearerAuth: []
       responses:
         '200':
@@ -211,6 +217,7 @@ paths:
       operationId: clearCart
       summary: Empty my cart
       security:
+        - {}
         - bearerAuth: []
       responses:
         '200':
@@ -221,13 +228,20 @@ paths:
                 $ref: '#/components/schemas/CartResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /api/v1/cart/items:
     post:
       tags: [Cart]
       operationId: addCartItem
       summary: Add a shop listing to my cart (adds to the quantity if already there)
-      description: Maximum 10 per item. An item with an applied bargain price is limited to 1 unit.
+      description: >-
+        Maximum 10 per item. An item with an applied bargain price is limited to 1 unit. Guest without a cart:
+        the first valid add creates the guest cart and sets the cookie "vh_guest_cart" (random UUID; HttpOnly;
+        SameSite=Lax; Path=/api/v1/cart; Max-Age 30 days; Secure in production). Guest carts unused for 30 days
+        are deleted. Guest writes are limited to 60 per minute per IP (429).
       security:
+        - {}
         - bearerAuth: []
       requestBody:
         required: true
@@ -256,6 +270,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -266,6 +282,7 @@ paths:
       operationId: updateCartItem
       summary: Change the quantity of a cart item
       security:
+        - {}
         - bearerAuth: []
       parameters:
         - name: itemId
@@ -297,6 +314,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -306,6 +325,7 @@ paths:
       operationId: removeCartItem
       summary: Remove an item from my cart
       security:
+        - {}
         - bearerAuth: []
       parameters:
         - name: itemId
@@ -323,6 +343,8 @@ paths:
                 $ref: '#/components/schemas/CartResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '404':
           $ref: '#/components/responses/NotFound'
 

@@ -64,7 +64,7 @@ paths:
                         description: Most similar first (best of photo similarity and title match).
                         items:
                           type: object
-                          required: [id, slug, title, image, thumbnail, lowestPrice, shopCount, match, score]
+                          required: [id, slug, title, image, thumbnail, lowestPrice, shopCount, bestListingId, match, score]
                           properties:
                             id:
                               type: string
@@ -79,6 +79,13 @@ paths:
                             thumbnail:
                               type: string
                               nullable: true
+                            bestListingId:
+                              type: string
+                              format: uuid
+                              nullable: true
+                              description: >-
+                                The listing "add to cart" uses: the cheapest active, in-stock listing of an active, verified shop
+                                (ties: newest), among the listings this list counts (e.g. only that shop on a shop page). Null if none.
                             lowestPrice:
                               type: integer
                             shopCount:

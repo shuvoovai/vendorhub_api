@@ -427,12 +427,18 @@ model BargainEvent {
 
 // ───────────── CART ─────────────
 
+// A user's cart (userId) or a guest cart (guestTokenHash: SHA-256 of the random "vh_guest_cart" cookie;
+// the token itself is never stored). Guest carts unused for 30 days are deleted by a job.
 model Cart {
-  id        String     @id @default(uuid())
-  userId    String     @unique
-  updatedAt DateTime   @updatedAt
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items     CartItem[]
+  id             String     @id @default(uuid())
+  userId         String?    @unique
+  guestTokenHash String?    @unique
+  lastUsedAt     DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  user           User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items          CartItem[]
+
+  @@index([lastUsedAt])
 }
 
 model CartItem {

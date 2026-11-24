@@ -4,6 +4,7 @@ import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 import { expireStaleBargains } from './modules/bargains/bargains.service.js';
 import { runAccountDeletionJobs } from './modules/users/accountDeletion.job.js';
+import { purgeStaleGuestCarts } from './modules/cart/cart.service.js';
 const server = app.listen(env.PORT, () => {
   logger.info(`API running on http://localhost:${env.PORT}`);
 });
@@ -24,11 +25,21 @@ const deletionJob = setInterval(runDeletions, 60 * 60 * 1000);
 deletionJob.unref();
 setTimeout(runDeletions, 60 * 1000).unref(); // also shortly after start
 
+// Guest carts not used for 30 days are deleted, hourly.
+const purgeGuestCarts = () =>
+  purgeStaleGuestCarts()
+    .then((count) => count && logger.info({ count }, 'stale guest carts deleted'))
+    .catch((err) => logger.error(err, 'guest cart cleanup failed'));
+const guestCartJob = setInterval(purgeGuestCarts, 60 * 60 * 1000);
+guestCartJob.unref();
+setTimeout(purgeGuestCarts, 2 * 60 * 1000).unref();
+
 // Graceful shutdown (Docker / systemd send SIGTERM): stop taking requests, then close the database.
 function shutdown(signal) {
   logger.info(`${signal} received, shutting down`);
   clearInterval(sweeper);
   clearInterval(deletionJob);
+  clearInterval(guestCartJob);
   server.close(async () => {
     await prisma.$disconnect();
     process.exit(0);

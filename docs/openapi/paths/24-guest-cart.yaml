@@ -1,0 +1,30 @@
+paths:
+  /api/v1/cart/merge:
+    post:
+      tags: [Cart]
+      operationId: mergeGuestCart
+      summary: Move the guest cart into my cart after login
+      description: >-
+        Login required. Reads the "vh_guest_cart" cookie (never a body, query or header value). Each guest item is
+        added to the user's cart: the same listing adds the quantities, capped at 10 (and at the stock when known);
+        listings that are gone or out of stock are skipped, and a line with an applied bargain stays as it is. The
+        guest cart is then deleted and the cookie cleared. Idempotent: a second call (or a replayed old cookie)
+        merges nothing. No cookie, or an unknown one: 200 with the user's cart.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The full user cart (same shape as GET /cart).
+          headers:
+            Set-Cookie:
+              description: Clears vh_guest_cart when one was sent.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'

@@ -8,6 +8,7 @@ import { env } from '../../config/env.js';
 import { processImage } from '../../lib/images.js';
 import { thumbFor } from '../../lib/storage.js';
 import { embedImage, toVectorLiteral } from '../../lib/clip.js';
+import { bestListingIds } from '../catalog/catalog.service.js';
 import { identifyProduct } from '../../lib/imageSearch.js';
 
 const RESULTS = 12;
@@ -72,6 +73,7 @@ async function similarProducts(buffer) {
     ORDER BY GREATEST(COALESCE(photo.score, 0), COALESCE(1 - (p."titleEmbedding" <=> ${v}::vector), 0) * ${TITLE_WEIGHT}) DESC, p.id
     LIMIT ${RESULTS}`;
 
+  const best = await bestListingIds(rows.map((r) => r.id));
   return rows.map((r) => {
     const photoScore = Number(r.photoScore);
     const titleScore = Number(r.titleScore) * TITLE_WEIGHT;
@@ -83,6 +85,7 @@ async function similarProducts(buffer) {
       thumbnail: r.image ? thumbFor(r.image) : null,
       lowestPrice: r.lowest,
       shopCount: r.shops,
+      bestListingId: best.get(r.id) ?? null,
       match: photoScore >= titleScore ? 'photo' : 'title',
       score: Math.round(Math.max(photoScore, titleScore) * 1000) / 1000,
     };

@@ -90,7 +90,7 @@ Check '11 of one item is rejected' $r.status 400
 $r = Call 'POST' '/cart/items' $cust @{ listingId = '00000000-0000-4000-8000-000000000000'; quantity = 1 }
 Check 'unknown listing' $r.status 404
 $r = Call 'GET' '/cart' $null $null
-Check 'cart without token' $r.status 401
+Check 'cart without token: empty guest cart (200)' $r.status 200
 $r = Call 'PATCH' "/cart/items/$itemId" $owner @{ quantity = 2 }
 Check 'someone else cannot touch my cart item' $r.status 404
 

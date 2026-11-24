@@ -82,6 +82,29 @@ const POPULAR_JOIN = Prisma.sql`
 // "%" and "_" (and the escape character itself) in a search text are normal characters, not wildcards.
 const likePattern = (text) => `%${text.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
 
+// The listing a product card's "add to cart" uses: the cheapest ACTIVE, in-stock listing of an active,
+// verified shop (ties: newest, then id), among the listings that pass the card's own filters (extra), so
+// a shop page or the following feed never points at another shop. One query for the whole page.
+export async function bestListingIds(productIds, extra = []) {
+  if (productIds.length === 0) return new Map();
+  const conds = [
+    Prisma.sql`l."productId" = ANY(${productIds})`,
+    Prisma.sql`l."isActive" = true`,
+    Prisma.sql`s."isActive" = true`,
+    Prisma.sql`s."verificationLevel" <> 'UNVERIFIED'`,
+    Prisma.sql`l.availability <> 'OUT_OF_STOCK'`,
+    Prisma.sql`(l."stockQty" IS NULL OR l."stockQty" > 0)`,
+    ...extra,
+  ];
+  const rows = await prisma.$queryRaw`
+    SELECT DISTINCT ON (l."productId") l."productId", l.id
+    FROM "ShopListing" l
+    JOIN "Shop" s ON s.id = l."shopId"
+    WHERE ${Prisma.join(conds, ' AND ')}
+    ORDER BY l."productId", l.price ASC, l."createdAt" DESC, l.id ASC`;
+  return new Map(rows.map((r) => [r.productId, r.id]));
+}
+
 export async function listProducts(query) {
   const { q, category, brand, minPrice, maxPrice, shopId, marketId, availableOnly, newSinceDays, productIds, feed, sort, page, limit } = query;
 
@@ -185,6 +208,7 @@ export async function listProducts(query) {
       })
     : [];
   const byId = new Map(products.map((p) => [p.id, p]));
+  const best = await bestListingIds(rows.map((r) => r.id), listingConds);
 
   const items = rows.map((r) => {
     const p = byId.get(r.id);
@@ -202,6 +226,7 @@ export async function listProducts(query) {
       shopCount: r.shopCount,
       availability: RANK_TO_AVAILABILITY[r.availabilityRank],
       bargainAvailable: r.bargainAvailable,
+      bestListingId: best.get(p.id) ?? null,
       createdAt: p.createdAt,
     };
   });

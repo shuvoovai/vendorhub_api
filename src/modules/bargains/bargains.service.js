@@ -412,5 +412,5 @@ export async function addToCart(user, id) {
     update: { quantity: 1, bargainId: b.id },
     create: { cartId: cart.id, listingId: l.id, quantity: 1, bargainId: b.id },
   });
-  return getCart(user.id);
+  return getCart({ userId: user.id });
 }

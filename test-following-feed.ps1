@@ -100,7 +100,7 @@ $followed = Get-Feed $cust 'followed'
 Check-Feed 'followed = TechZone only' $followed $tz
 Check 'followed: shopCount counts only TechZone' (@($followed | Where-Object { $_.shopCount -ne 1 }).Count) 0
 $card = $followed[0]
-foreach ($f in @('id', 'slug', 'title', 'brand', 'category', 'image', 'msrp', 'lowestPrice', 'highestPrice', 'shopCount', 'availability', 'bargainAvailable', 'createdAt')) {
+foreach ($f in @('id', 'slug', 'title', 'brand', 'category', 'image', 'msrp', 'lowestPrice', 'highestPrice', 'shopCount', 'availability', 'bargainAvailable', 'bestListingId', 'createdAt')) {
     Check "card has $f" ($null -ne $card.PSObject.Properties[$f]) $true
 }
 Check 'no stock number in the cards' (@($followed | Where-Object { $_.PSObject.Properties['stockQty'] }).Count) 0

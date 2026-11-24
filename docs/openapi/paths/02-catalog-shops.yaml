@@ -706,6 +706,13 @@ components:
           $ref: '#/components/schemas/Availability'
         bargainAvailable:
           type: boolean
+        bestListingId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            The listing "add to cart" uses: the cheapest active, in-stock listing of an active, verified shop
+            (ties: newest), among the listings this list counts (e.g. only that shop on a shop page). Null if none.
         createdAt:
           type: string
           format: date-time

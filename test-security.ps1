@@ -55,8 +55,8 @@ $r = Raw 'GET' "$api/does-not-exist" $null $null
 Check 'an unknown API path is a 404 (not 401)' $r.status 404
 
 # ---- protected routes ----
-$r = Raw 'GET' "$api/cart" $null $null
-Check 'cart without a token is 401' $r.status 401
+$r = Raw 'GET' "$api/auth/me" $null $null
+Check 'auth/me without a token is 401' $r.status 401
 $r = Raw 'GET' "$api/admin/verifications" $null $null
 Check 'admin queue without a token is 401' $r.status 401
 

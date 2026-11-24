@@ -84,7 +84,7 @@ Check 'a second overlapping deal: 409' (Call 'POST' "/shops/$techId/deals" $owne
 $items = @(Flash)
 Check 'public list shows the deal' $items.Count 1
 $it = $items[0]
-foreach ($f in @('id', 'slug', 'title', 'brand', 'category', 'image', 'thumbnail', 'msrp', 'lowestPrice', 'highestPrice', 'shopCount', 'availability', 'bargainAvailable', 'createdAt', 'dealPrice', 'originalPrice', 'dealEndsAt', 'dealId', 'listingId')) {
+foreach ($f in @('id', 'slug', 'title', 'brand', 'category', 'image', 'thumbnail', 'msrp', 'lowestPrice', 'highestPrice', 'shopCount', 'availability', 'bargainAvailable', 'bestListingId', 'createdAt', 'dealPrice', 'originalPrice', 'dealEndsAt', 'dealId', 'listingId')) {
     Check "item has $f" ($null -ne $it.PSObject.Properties[$f]) $true
 }
 Check 'id is the product id' $it.id $listing.productId
