@@ -55,3 +55,28 @@ export const reviewToletSchema = z
   .refine((b) => b.status !== 'REJECTED' || b.reason, { message: 'A reason is required when rejecting', path: ['reason'] });
 
 export const idParams = z.object({ id: z.string().uuid() });
+
+// ---------- inquiries (visit requests) ----------
+
+export const INQUIRY_TIMES = ['MORNING', 'AFTERNOON', 'EVENING'];
+export const INQUIRY_STATUSES = ['NEW', 'CONTACTED', 'CLOSED'];
+const addDays = (ymd, n) => new Date(Date.parse(`${ymd}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+const preferredDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
+  .refine((d) => !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().startsWith(d), 'Invalid date')
+  .refine((d) => d >= dhakaToday() && d <= addDays(dhakaToday(), 90), 'preferredDate must be between today and 90 days ahead');
+
+export const createInquirySchema = z.strictObject({
+  name: plainText(2, 80),
+  phone: bdPhone,
+  preferredDate,
+  preferredTime: z.enum(INQUIRY_TIMES),
+  message: optionalPlainText(500, { multiline: true }),
+  website: z.string().max(500).optional(), // honeypot
+});
+
+export const adminInquiriesQuery = z.object({ status: z.enum(INQUIRY_STATUSES).optional() });
+
+export const updateInquirySchema = z.strictObject({ status: z.enum(INQUIRY_STATUSES) });

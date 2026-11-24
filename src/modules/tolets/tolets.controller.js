@@ -36,3 +36,20 @@ export const adminList = async (req, res) => {
   res.json({ success: true, data: items, meta: { pagination } });
 };
 export const adminReview = async (req, res) => ok(res, await s.adminReview(req.user, req.params.id, req.body));
+
+// Inquiry honeypot: same 201 shape as a real one, nothing saved.
+export const inquiryHoneypot = (req, res, next) => {
+  const trap = req.body?.website;
+  if (typeof trap === 'string' && trap.trim() !== '') {
+    return res.status(201).json({ success: true, data: { id: crypto.randomUUID() } });
+  }
+  next();
+};
+export const createInquiry = async (req, res) =>
+  res.status(201).json({ success: true, data: await s.createInquiry(req.params.id, req.body, { ip: req.ip }) });
+
+export const adminListInquiries = async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  ok(res, await s.adminListInquiries(req.validated));
+};
+export const adminUpdateInquiry = async (req, res) => ok(res, await s.adminUpdateInquiry(req.user, req.params.id, req.body));

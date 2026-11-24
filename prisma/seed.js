@@ -70,6 +70,7 @@ async function clean() {
         prisma.emailVerificationToken.deleteMany(),
         prisma.foodOrder.deleteMany(),
         prisma.foodItem.deleteMany(),
+        prisma.toletInquiry.deleteMany(),
         prisma.tolet.deleteMany(),
         prisma.flashDeal.deleteMany(),
         prisma.banner.deleteMany(),

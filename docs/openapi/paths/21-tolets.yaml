@@ -6,7 +6,7 @@ paths:
       summary: Approved shop-space listings, newest first
       description: >-
         Public. Only APPROVED listings that have not expired (approval lasts 60 days). Never includes the
-        submitter, IP hash, reviewer or rejection reason. Sent with Cache-Control "public, max-age=60".
+        contact name or phone (visitors use POST /tolets/{id}/inquiries), submitter, IP hash, reviewer or rejection reason. Sent with Cache-Control "public, max-age=60".
       parameters:
         - name: type
           in: query
@@ -309,7 +309,7 @@ components:
       enum: [PENDING, APPROVED, REJECTED]
     Tolet:
       type: object
-      required: [id, type, title, marketName, floor, area, address, rent, advance, sizeSqft, availableFrom, contactName, contactPhone, description, status, createdAt]
+      required: [id, type, title, marketName, floor, area, address, rent, advance, sizeSqft, availableFrom, description, status, createdAt]
       properties:
         id:
           type: string
@@ -340,10 +340,6 @@ components:
           type: string
           format: date
           example: '2026-12-01'
-        contactName:
-          type: string
-        contactPhone:
-          type: string
         description:
           type: string
           nullable: true
@@ -356,8 +352,12 @@ components:
       allOf:
         - $ref: '#/components/schemas/Tolet'
         - type: object
-          required: [rejectionReason, expiresAt]
+          required: [contactName, contactPhone, rejectionReason, expiresAt]
           properties:
+            contactName:
+              type: string
+            contactPhone:
+              type: string
             rejectionReason:
               type: string
               nullable: true

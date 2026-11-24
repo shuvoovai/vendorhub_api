@@ -854,9 +854,42 @@ model Tolet {
   updatedAt       DateTime    @updatedAt
   user            User?       @relation("ToletSubmitter", fields: [userId], references: [id], onDelete: SetNull)
   reviewedBy      User?       @relation("ToletReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  inquiries       ToletInquiry[]
 
   @@index([status, createdAt])
   @@index([submitterIpHash, createdAt])
   @@index([contactPhone, status])
   @@index([userId])
+}
+
+enum ToletInquiryTime {
+  MORNING
+  AFTERNOON
+  EVENING
+}
+
+enum ToletInquiryStatus {
+  NEW
+  CONTACTED
+  CLOSED
+}
+
+// A visit / appointment request for an approved to-let listing (public, no login).
+model ToletInquiry {
+  id              String             @id @default(uuid())
+  toletId         String
+  name            String
+  phone           String
+  preferredDate   DateTime           @db.Date
+  preferredTime   ToletInquiryTime
+  message         String?
+  status          ToletInquiryStatus @default(NEW)
+  submitterIpHash String? // salted HMAC of the IP (rate limit), never the IP itself
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  tolet           Tolet              @relation(fields: [toletId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([submitterIpHash, createdAt])
+  @@index([toletId])
 }

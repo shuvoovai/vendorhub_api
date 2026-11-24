@@ -94,7 +94,7 @@ $pub = @(Public | Where-Object { $_.id -eq $aId })
 Check 'approved is public' $pub.Count 1
 $item = $pub[0]
 Check 'availableFrom is YYYY-MM-DD' $item.availableFrom $next
-foreach ($f in @('userId', 'submitterIpHash', 'reviewedById', 'reviewedBy', 'rejectionReason', 'submitter', 'expiresAt')) {
+foreach ($f in @('contactName', 'contactPhone', 'userId', 'submitterIpHash', 'reviewedById', 'reviewedBy', 'rejectionReason', 'submitter', 'expiresAt')) {
     Check "public item has no $f" ($null -eq $item.PSObject.Properties[$f]) $true
 }
 Check 'line break in description kept' ($item.description -match "`n") $true

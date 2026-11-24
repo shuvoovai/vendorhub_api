@@ -1,0 +1,206 @@
+paths:
+  /api/v1/tolets/{id}/inquiries:
+    post:
+      tags: [To-let]
+      operationId: createToletInquiry
+      summary: Ask to visit an approved to-let listing (no login needed)
+      description: >-
+        Public. The listing must be APPROVED and not expired (else 404). Unknown keys are rejected (400). Text is
+        plain. Limit: 5 saved requests per hour per connection (429). website is a hidden spam trap: leave it
+        empty (a filled one still answers 201, but nothing is saved).
+      security:
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/ToletId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, phone, preferredDate, preferredTime]
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 80
+                phone:
+                  type: string
+                  pattern: '^01[3-9]\d{8}$'
+                preferredDate:
+                  type: string
+                  format: date
+                  description: YYYY-MM-DD, from today (Bangladesh time) up to 90 days ahead.
+                preferredTime:
+                  $ref: '#/components/schemas/ToletInquiryTime'
+                message:
+                  type: string
+                  maxLength: 500
+                website:
+                  type: string
+                  description: Honeypot. Must stay empty.
+      responses:
+        '201':
+          description: Received.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/v1/admin/tolet-inquiries:
+    get:
+      tags: [To-let, Admin]
+      operationId: adminListToletInquiries
+      summary: Visit requests, newest first (at most 100)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Leave out for all.
+          schema:
+            $ref: '#/components/schemas/ToletInquiryStatus'
+      responses:
+        '200':
+          description: The requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ToletInquiry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/tolet-inquiries/{id}:
+    patch:
+      tags: [To-let, Admin]
+      operationId: adminUpdateToletInquiry
+      summary: Change a visit request's status (audited)
+      description: Allowed changes are NEW to CONTACTED or CLOSED, CONTACTED to CLOSED, and CLOSED to NEW. Anything else is 409.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              additionalProperties: false
+              properties:
+                status:
+                  $ref: '#/components/schemas/ToletInquiryStatus'
+      responses:
+        '200':
+          description: The updated request.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ToletInquiry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  schemas:
+    ToletInquiryTime:
+      type: string
+      enum: [MORNING, AFTERNOON, EVENING]
+    ToletInquiryStatus:
+      type: string
+      enum: [NEW, CONTACTED, CLOSED]
+    ToletInquiry:
+      type: object
+      required: [id, name, phone, preferredDate, preferredTime, message, status, createdAt, tolet]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        phone:
+          type: string
+        preferredDate:
+          type: string
+          format: date
+        preferredTime:
+          $ref: '#/components/schemas/ToletInquiryTime'
+        message:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ToletInquiryStatus'
+        createdAt:
+          type: string
+          format: date-time
+        tolet:
+          type: object
+          required: [id, title, type, area, marketName, rent, contactName, contactPhone]
+          properties:
+            id:
+              type: string
+              format: uuid
+            title:
+              type: string
+            type:
+              $ref: '#/components/schemas/ToletType'
+            area:
+              type: string
+            marketName:
+              type: string
+              nullable: true
+            rent:
+              type: integer
+            contactName:
+              type: string
+            contactPhone:
+              type: string
