@@ -20,6 +20,9 @@ const body = (req, res, next) => {
   next();
 };
 
+// Upload quota only for multipart requests: a JSON PATCH (e.g. show/hide) carries no file.
+const uploadQuota = (req, res, next) => (req.is('multipart/form-data') ? uploadLimiter(req, res, next) : next());
+
 // Public (covered by the global /api/v1 rate limiter)
 router.get('/banners', c.listPublic);
 
@@ -27,7 +30,7 @@ router.get('/admin/banners', ...adminOnly, c.listAll);
 router.post('/admin/banners', ...adminOnly, uploadLimiter, receiveBannerForm, body, validate(createBannerSchema), c.create);
 // before /:id so "reorder" is never read as an id
 router.patch('/admin/banners/reorder', ...adminOnly, validate(reorderSchema), c.reorder);
-router.patch('/admin/banners/:id', ...adminOnly, validId, uploadLimiter, receiveBannerForm, body, validate(updateBannerSchema), c.update);
+router.patch('/admin/banners/:id', ...adminOnly, validId, uploadQuota, receiveBannerForm, body, validate(updateBannerSchema), c.update);
 router.delete('/admin/banners/:id', ...adminOnly, validId, c.remove);
 
 export default router;

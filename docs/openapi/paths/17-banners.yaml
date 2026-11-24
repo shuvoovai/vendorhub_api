@@ -58,6 +58,10 @@ paths:
         One JPG, PNG or WebP photo in "image" (type read from the content), max 3 MB, at least 800 x 267;
         center-cropped to 1600 x 534 and re-encoded as WebP without metadata. Text fields are plain text.
         href must be an internal path ("/..." but not "//..."). An empty optional field means null.
+        Optional "video": MP4 or WebM (type read from the first bytes, not the name or header), max 20 MB,
+        saved under a random name; the photo is its poster. The whole request may be up to 25 MB.
+        startsAt/endsAt accept an offset, e.g. "2026-12-01T00:00:00+06:00"; an empty string means null.
+        The audit entry records videoAdded.
       security:
         - bearerAuth: []
       requestBody:
@@ -73,6 +77,10 @@ paths:
                     image:
                       type: string
                       format: binary
+                    video:
+                      type: string
+                      format: binary
+                      description: MP4 or WebM, max 20 MB.
       responses:
         '201':
           description: Created.
@@ -87,7 +95,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '413':
-          description: The photo is larger than 3 MB.
+          description: The photo is larger than 3 MB, the video larger than 20 MB, or the request larger than 25 MB.
           content:
             application/json:
               schema:
@@ -151,7 +159,11 @@ paths:
       tags: [Admin]
       operationId: adminUpdateBanner
       summary: Update fields and/or replace the photo (audited as banner.updated)
-      description: Multipart (or JSON when no photo is sent). Same rules as create; every field is optional.
+      description: >-
+        Multipart (or JSON when no file is sent, e.g. { "isActive": false } for show/hide). Same rules as create;
+        every field is optional. A new "video" replaces the old one (its file is deleted); removeVideo "true"
+        deletes the video and sets videoUrl to null (sending both is 400). The audit entry records
+        videoAdded and videoRemoved.
       security:
         - bearerAuth: []
       parameters:
@@ -173,6 +185,16 @@ paths:
                     image:
                       type: string
                       format: binary
+                    video:
+                      type: string
+                      format: binary
+                      description: MP4 or WebM, max 20 MB. Replaces the current video.
+                    removeVideo:
+                      type: string
+                      enum: ['true', 'false']
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BannerFields'
       responses:
         '200':
           description: The updated banner.
@@ -189,7 +211,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '413':
-          description: The photo is larger than 3 MB.
+          description: The photo is larger than 3 MB, the video larger than 20 MB, or the request larger than 25 MB.
           content:
             application/json:
               schema:
@@ -205,7 +227,7 @@ paths:
     delete:
       tags: [Admin]
       operationId: adminDeleteBanner
-      summary: Delete a banner and its photo files (audited as banner.deleted)
+      summary: Delete a banner and its photo and video files (audited as banner.deleted)
       security:
         - bearerAuth: []
       parameters:
@@ -273,14 +295,18 @@ components:
           format: date-time
     PublicBanner:
       type: object
-      required: [id, imageUrl, titleEn, titleBn, textEn, textBn, ctaEn, ctaBn, href]
+      required: [id, imageUrl, videoUrl, titleEn, titleBn, textEn, textBn, ctaEn, ctaBn, href]
       properties:
         id:
           type: string
           format: uuid
         imageUrl:
           type: string
-          description: Our own API origin, /media/<uuid>.webp (1600 x 534)
+          description: Our own API origin, /media/<uuid>.webp (1600 x 534). Also the poster and fallback of the video.
+        videoUrl:
+          type: string
+          nullable: true
+          description: Our own API origin, /media/<uuid>.mp4 or .webm (Range requests supported), or null.
         titleEn:
           type: string
         titleBn:

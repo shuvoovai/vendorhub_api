@@ -13,8 +13,10 @@ import { env } from '../config/env.js';
 const MEDIA_DIR = path.resolve(env.UPLOAD_DIR, 'media');
 const STAGING_DIR = path.resolve(env.UPLOAD_DIR, 'staging');
 
-// The ONLY names that can ever be served: <uuid>.webp and <uuid>-thumb.webp.
+// Images that can be served: <uuid>.webp and <uuid>-thumb.webp.
 const MEDIA_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(-thumb)?\.webp$/;
+// Videos that can be served: <uuid>.mp4 and <uuid>.webm (banners).
+const VIDEO_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(mp4|webm)$/;
 
 const namesFor = (key) => [`${key}.webp`, `${key}-thumb.webp`];
 
@@ -72,8 +74,36 @@ export async function removeImage(key) {
 
 /** Maps a requested name to a file inside the media folder, or null when the name is not allowed. */
 export function mediaFilePath(name) {
-  return typeof name === 'string' && MEDIA_NAME.test(name) ? path.join(MEDIA_DIR, name) : null;
+  return typeof name === 'string' && (MEDIA_NAME.test(name) || VIDEO_NAME.test(name)) ? path.join(MEDIA_DIR, name) : null;
 }
+
+/**
+ * Publishes a checked video (ext "mp4" | "webm") under a random name: staging first, then an atomic move.
+ * @returns {Promise<{ key: string, url: string }>} key is the stored file name ("<uuid>.mp4")
+ */
+export async function publishVideo(buffer, ext) {
+  if (ext !== 'mp4' && ext !== 'webm') throw new Error('Unsupported video type');
+  const key = `${crypto.randomUUID()}.${ext}`;
+  await mkdir(STAGING_DIR, { recursive: true });
+  await mkdir(MEDIA_DIR, { recursive: true });
+  const staged = path.join(STAGING_DIR, key);
+  try {
+    await writeFile(staged, buffer, { flag: 'wx' });
+    await rename(staged, path.join(MEDIA_DIR, key));
+  } catch (err) {
+    await removeQuietly(staged);
+    throw err;
+  }
+  return { key, url: videoUrl(key) };
+}
+
+/** Deletes a published video (missing file is fine). Only server-made names are touched. */
+export async function removeVideo(key) {
+  if (typeof key !== 'string' || !VIDEO_NAME.test(key)) return;
+  await removeQuietly(path.join(MEDIA_DIR, key));
+}
+
+export const videoUrl = (key) => `${env.PUBLIC_API_URL}/media/${key}`;
 
 /** Public URLs on our own API origin, built from the key (never stored). */
 export function imageUrls(key) {

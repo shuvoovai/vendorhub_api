@@ -40,7 +40,10 @@ export const createBannerSchema = z
   .refine(datesInOrder, ORDER);
 
 export const updateBannerSchema = z
-  .strictObject(Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v.optional()])))
+  .strictObject({
+    ...Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v.optional()])),
+    removeVideo: bool.optional(), // "true": delete the video (the photo stays)
+  })
   .refine(datesInOrder, ORDER);
 
 export const reorderSchema = z.strictObject({

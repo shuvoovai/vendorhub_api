@@ -726,6 +726,8 @@ model EmailVerificationToken {
 model Banner {
   id        String    @id @default(uuid())
   imageKey  String    @unique
+  videoUrl  String? // public /media URL of the optional MP4/WebM (the image is its poster)
+  videoKey  String?   @unique // stored file name, e.g. "<uuid>.mp4"
   titleEn   String
   titleBn   String
   textEn    String?

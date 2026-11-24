@@ -1,7 +1,8 @@
 import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { processImage } from '../../lib/images.js';
-import { stageImage, removeImage, imageUrls } from '../../lib/storage.js';
+import { stageImage, removeImage, imageUrls, publishVideo, removeVideo } from '../../lib/storage.js';
+import { detectVideo } from '../../lib/videos.js';
 
 const PUBLIC_LIMIT = 5;
 const NOT_FOUND = 'Banner not found';
@@ -10,6 +11,7 @@ const NOT_FOUND = 'Banner not found';
 const presentPublic = (b) => ({
   id: b.id,
   imageUrl: imageUrls(b.imageKey).url,
+  videoUrl: b.videoUrl ?? null,
   titleEn: b.titleEn,
   titleBn: b.titleBn,
   textEn: b.textEn,
@@ -20,9 +22,9 @@ const presentPublic = (b) => ({
 });
 
 const presentAdmin = (b) => {
-  const { imageKey, ...rest } = b;
+  const { imageKey, videoKey, ...rest } = b;
   const { url, thumbUrl } = imageUrls(imageKey);
-  return { ...rest, imageUrl: url, thumbUrl };
+  return { ...rest, imageUrl: url, thumbUrl, videoUrl: b.videoUrl ?? null };
 };
 
 const audit = (tx, actorId, action, entityId, meta) =>
@@ -54,45 +56,72 @@ async function publishPhoto(file) {
   return staged.key;
 }
 
-export async function create(admin, input, file) {
+// Checks the real type from the first bytes before anything is written.
+function videoType(video) {
+  const ext = detectVideo(video.buffer);
+  if (!ext) throw new AppError(400, 'The video must be an MP4 or WebM file');
+  return ext;
+}
+
+export async function create(admin, input, file, video) {
   if (!file) throw new AppError(400, 'Send exactly one photo in the multipart field "image"');
+  const ext = video ? videoType(video) : null;
   const key = await publishPhoto(file);
+  let vid = null;
   try {
+    if (ext) vid = await publishVideo(video.buffer, ext);
     const banner = await prisma.$transaction(async (tx) => {
       const sortOrder = input.sortOrder ?? (await tx.banner.count());
-      const b = await tx.banner.create({ data: { ...input, sortOrder, imageKey: key } });
-      await audit(tx, admin.id, 'banner.created', b.id, { titleEn: b.titleEn });
+      const b = await tx.banner.create({
+        data: { ...input, sortOrder, imageKey: key, ...(vid && { videoKey: vid.key, videoUrl: vid.url }) },
+      });
+      await audit(tx, admin.id, 'banner.created', b.id, { titleEn: b.titleEn, videoAdded: Boolean(vid) });
       return b;
     });
     return presentAdmin(banner);
   } catch (err) {
     await removeImage(key).catch(() => {});
+    if (vid) await removeVideo(vid.key).catch(() => {});
     throw err;
   }
 }
 
-export async function update(admin, id, input, file) {
+export async function update(admin, id, body, file, video) {
+  const { removeVideo: dropVideo, ...input } = body;
   const current = await prisma.banner.findUnique({ where: { id } });
   if (!current) throw new AppError(404, NOT_FOUND);
-  if (Object.keys(input).length === 0 && !file) throw new AppError(400, 'Nothing to update');
+  if (Object.keys(input).length === 0 && !file && !video && !dropVideo) throw new AppError(400, 'Nothing to update');
+  if (video && dropVideo) throw new AppError(400, 'Send a new video or removeVideo, not both');
+  const ext = video ? videoType(video) : null;
 
   const startsAt = input.startsAt !== undefined ? input.startsAt : current.startsAt;
   const endsAt = input.endsAt !== undefined ? input.endsAt : current.endsAt;
   if (startsAt && endsAt && endsAt <= startsAt) throw new AppError(400, 'endsAt must be after startsAt');
 
   const key = file ? await publishPhoto(file) : null;
+  let vid = null;
   let banner;
   try {
+    if (ext) vid = await publishVideo(video.buffer, ext);
+    const videoData = vid ? { videoKey: vid.key, videoUrl: vid.url } : dropVideo ? { videoKey: null, videoUrl: null } : {};
     banner = await prisma.$transaction(async (tx) => {
-      const b = await tx.banner.update({ where: { id }, data: { ...input, ...(key && { imageKey: key }) } });
-      await audit(tx, admin.id, 'banner.updated', id, { fields: Object.keys(input), imageReplaced: Boolean(key) });
+      const b = await tx.banner.update({ where: { id }, data: { ...input, ...(key && { imageKey: key }), ...videoData } });
+      await audit(tx, admin.id, 'banner.updated', id, {
+        fields: Object.keys(input),
+        imageReplaced: Boolean(key),
+        videoAdded: Boolean(vid),
+        videoRemoved: Boolean(current.videoKey && (vid || dropVideo)),
+      });
       return b;
     });
   } catch (err) {
     if (key) await removeImage(key).catch(() => {});
+    if (vid) await removeVideo(vid.key).catch(() => {});
     throw err;
   }
-  if (key) await removeImage(current.imageKey).catch(() => {}); // old files, after success
+  // old files, after success
+  if (key) await removeImage(current.imageKey).catch(() => {});
+  if ((vid || dropVideo) && current.videoKey) await removeVideo(current.videoKey).catch(() => {});
   return presentAdmin(banner);
 }
 
@@ -118,4 +147,5 @@ export async function remove(admin, id) {
     prisma.auditLog.create({ data: { actorId: admin.id, action: 'banner.deleted', entityType: 'Banner', entityId: id, meta: { titleEn: banner.titleEn } } }),
   ]);
   await removeImage(banner.imageKey).catch(() => {});
+  await removeVideo(banner.videoKey).catch(() => {});
 }
