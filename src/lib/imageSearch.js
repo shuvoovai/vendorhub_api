@@ -23,7 +23,8 @@ const buildPrompt = (categoryNames) =>
 
 /** Returns the model's parsed JSON (still untrusted: the caller cleans and checks every field). */
 export async function identifyProduct({ buffer, mimeType, categoryNames }) {
-  if (env.SEARCH_IMAGE_MODE === 'mock') return { query: 'galaxy', label: 'Test result', categoryHint: null };
+  // mock: a fixed answer that also names a demo category, so the category re-ranking is exercised
+  if (env.SEARCH_IMAGE_MODE === 'mock') return { query: 'galaxy', label: 'Test result', categoryHint: 'Mobile Phones' };
   if (!env.GEMINI_API_KEY) throw new AppError(503, 'Search by photo is not configured');
   client ??= new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
 

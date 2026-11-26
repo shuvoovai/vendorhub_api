@@ -43,7 +43,8 @@ $r = Search $user 'photo' 'valid.jpg' 'image/jpeg'
 Check 'a photo is accepted' $r.status 200
 Check 'the answer has the search words' $r.json.data.query 'galaxy'
 Check 'the answer has a label' $r.json.data.label 'Test result'
-Check 'category is null when nothing fits' ($null -eq $r.json.data.category) $true
+Check 'the mock category is matched to ours' $r.json.data.category.slug 'mobile-phones'
+Check 'the category answer has no internal id' ($null -eq $r.json.data.category.id) $true
 Check 'the answer is never cached' $r.cache 'no-store'
 Check 'the answer has a products list' ($null -ne $r.json.data.products) $true
 Check 'visual search finds products' (@($r.json.data.products).Count -ge 1) $true
@@ -65,7 +66,25 @@ for ($i = 0; $i -lt 10; $i++) {
 }
 Check 'the same photo finds its product first' $top.slug 'galaxy-a55-5g-8-128gb'
 Check 'found by photo similarity' $top.match 'photo'
-$before = FileCount # the A55 photo above added 2 files on purpose; searches from here on must add none
+
+# the same photo on a product of ANOTHER category (Laptop, Other Electronics): before the re-ranking both
+# scored 1.0 and the order was a coin flip. The mock answer says "Mobile Phones", so the A55 must stay first
+# and the laptop is dropped (at least 4 phones are left among the candidates).
+$laptop = (Invoke-RestMethod "$base/products/laptop").data.product.id
+& curl.exe -s -o NUL -X PUT -H "Authorization: Bearer $admin" -F "image=@$noise;type=image/jpeg" "$base/admin/products/$laptop/images"
+node --env-file=.env scripts/backfill-fingerprints.mjs | Out-Null # the new photo's fingerprint, without waiting
+$s = Search $user 'photo' 'noise.jpg' 'image/jpeg'
+$slugs = @($s.json.data.products | ForEach-Object { $_.slug })
+Check 'the matching category beats the same photo in another category' $slugs[0] 'galaxy-a55-5g-8-128gb'
+Check 'the other top-level category is dropped' ($slugs -contains 'laptop') $false
+Check 'at most 12 results' ($slugs.Count -le 12) $true
+Check 'scores stay between 0 and 1' (@($s.json.data.products | Where-Object { $_.score -lt 0 -or $_.score -gt 1 }).Count) 0
+
+# the ranking rules with a mocked AI answer and made-up candidates (no model, no database)
+foreach ($line in @(node scripts/check-photo-ranking.mjs)) {
+    Check "ranking: $($line.Substring(5))" $line.StartsWith('PASS ') $true
+}
+$before = FileCount # the A55 and laptop photos above added files on purpose; searches from here on must add none
 Check 'a PNG works' (Search $user 'photo' 'valid.png' 'image/png').status 200
 Check 'a WebP works' (Search $user 'photo' 'valid.webp' 'image/webp').status 200
 
