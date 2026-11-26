@@ -24,6 +24,8 @@ function Login($email) {
 function Need($value, $what) { if (-not $value) { Write-Host "STOP: $what not found" -ForegroundColor Red; exit 1 } }
 function Iso($date) { return $date.ToUniversalTime().ToString('o') }
 function Flash { return @((Call 'GET' '/deals/flash?limit=20' $null $null).json.data) }
+# a shop's deal is a request (PENDING) until an admin approves it; only approved deals are live
+function Approve($id) { return (Call 'PATCH' "/admin/deals/$id/review" $admin @{ decision = 'APPROVE' }).status }
 
 try { Invoke-WebRequest 'http://localhost:4000/health' -UseBasicParsing | Out-Null }
 catch { Write-Host 'The API is not running.' -ForegroundColor Red; exit 1 }
@@ -80,7 +82,8 @@ Check 'unknown field: 400' (Call 'POST' "/shops/$techId/deals" $owner $extra).st
 $r = Call 'POST' "/shops/$techId/deals" $owner $deal
 Check 'owner creates a deal: 201' $r.status 201
 $dealId = $r.json.data.id
-Check 'a second overlapping deal: 409' (Call 'POST' "/shops/$techId/deals" $owner $deal).status 409
+Check 'a second overlapping deal (the first is pending): 409' (Call 'POST' "/shops/$techId/deals" $owner $deal).status 409
+Check 'admin approves the deal' (Approve $dealId) 200
 $items = @(Flash)
 Check 'public list shows the deal' $items.Count 1
 $it = $items[0]
@@ -103,6 +106,7 @@ if ($twin) {
     $cheap = [Math]::Min([int]$twin.price - 1, $dealPrice - 10)
     $tw = Call 'POST' "/shops/$dmhId/deals" $owner2 @{ listingId = $twin.id; dealPrice = $cheap; startsAt = (Iso $now.AddMinutes(-1)); endsAt = (Iso $now.AddHours(5)) }
     Check 'second shop creates a deal on the same product' $tw.status 201
+    Check 'admin approves the second deal' (Approve $tw.json.data.id) 200
     $both = @(Flash)
     Check 'still one item for the product' @($both | Where-Object { $_.id -eq $listing.productId }).Count 1
     Check 'the cheapest deal is shown' (@($both | Where-Object { $_.id -eq $listing.productId })[0].dealPrice) $cheap
@@ -127,6 +131,7 @@ Check 'sold units are counted' (@((Call 'GET' "/shops/$techId/deals" $owner $nul
 
 # ---- 5. stock limit: no deal units left -> normal price ----
 Check 'owner sets stockLimit 2' (Call 'PATCH' "/shops/$techId/deals/$dealId" $owner @{ stockLimit = 2 }).status 200
+Check 'admin approves the changed deal' (Approve $dealId) 200
 Check 'sold-out deal is hidden' @(Flash).Count 0
 Call 'POST' '/cart/items' $cust @{ listingId = $listing.id; quantity = 1 } | Out-Null
 $line = @(@((Call 'GET' '/cart' $cust $null).json.data.shops)[0].items)[0]
@@ -143,6 +148,7 @@ Check 'owner deletes the deal' (Call 'DELETE' "/shops/$techId/deals/$dealId" $ow
 $fut = $deal.Clone(); $fut.startsAt = (Iso (Get-Date).AddHours(1)); $fut.endsAt = (Iso (Get-Date).AddHours(3))
 $r = Call 'POST' "/shops/$techId/deals" $owner $fut
 Check 'a future deal is created' $r.status 201
+Check 'admin approves the future deal' (Approve $r.json.data.id) 200
 Check 'the future deal is hidden' @(Flash).Count 0
 Call 'POST' '/cart/items' $cust @{ listingId = $listing.id; quantity = 1 } | Out-Null
 Check 'future deal: normal price in the cart' (@(@((Call 'GET' '/cart' $cust $null).json.data.shops)[0].items)[0].unitPrice) $price
@@ -158,15 +164,17 @@ $uvListing = (Call 'POST' "/shops/$uvShop/listings" $uv @{ productId = $listing.
 Need $uvListing 'the unverified listing'
 $uvDeal = Call 'POST' "/shops/$uvShop/deals" $uv @{ listingId = $uvListing; dealPrice = $dealPrice; startsAt = (Iso (Get-Date).AddMinutes(-1)); endsAt = (Iso (Get-Date).AddHours(2)) }
 Check 'an unverified shop may create a deal' $uvDeal.status 201
+Check 'admin approves it' (Approve $uvDeal.json.data.id) 200
 Check 'but it is not on the public list' @(Flash).Count 0
 Check 'admin removes it' (Call 'DELETE' "/admin/deals/$($uvDeal.json.data.id)" $admin $null).status 200
-$short = $deal.Clone(); $short.endsAt = (Iso (Get-Date).AddSeconds(4))
+$short = $deal.Clone(); $short.endsAt = (Iso (Get-Date).AddSeconds(6))
 $r = Call 'POST' "/shops/$techId/deals" $owner $short
 Check 'a short deal is created' $r.status 201
 $shortId = $r.json.data.id
+Check 'admin approves the short deal' (Approve $shortId) 200
 Check 'the short deal is listed while running' @(Flash).Count 1
 Call 'POST' '/cart/items' $cust @{ listingId = $listing.id; quantity = 1 } | Out-Null
-Start-Sleep -Seconds 6
+Start-Sleep -Seconds 8
 Check 'the expired deal is hidden' @(Flash).Count 0
 $line = @(@((Call 'GET' '/cart' $cust $null).json.data.shops)[0].items)[0]
 Check 'expired deal: normal price in the cart' $line.unitPrice $price
@@ -181,7 +189,7 @@ Check 'admin delete bad id: 400' (Call 'DELETE' '/admin/deals/x' $admin $null).s
 Check 'admin deletes a deal' (Call 'DELETE' "/admin/deals/$shortId" $admin $null).status 200
 Check 'admin delete again: 404' (Call 'DELETE' "/admin/deals/$shortId" $admin $null).status 404
 $logs = @((Call 'GET' '/admin/audit-logs?entityType=FlashDeal&limit=50' $admin $null).json.data | ForEach-Object { $_.action })
-foreach ($a in @('deal.created', 'deal.updated', 'deal.deleted', 'deal.admin_deleted')) { Check "audit log has $a" ($logs -contains $a) $true }
+foreach ($a in @('deal.created', 'deal.updated', 'deal.deleted', 'deal.admin_deleted', 'deal.approved')) { Check "audit log has $a" ($logs -contains $a) $true }
 
 # ---- 8. home page helpers ----
 $cats = @((Call 'GET' '/categories?topLevel=true' $null $null).json.data)

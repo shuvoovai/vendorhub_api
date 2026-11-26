@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { assertShopAccess } from '../../lib/shopAccess.js';
 import { listProducts } from '../catalog/catalog.service.js';
+import { notifyDealReview } from '../notifications/notifications.events.js';
 import { MAX_DEAL_DAYS } from './deals.schema.js';
 
 const NOT_FOUND = 'Deal not found';
@@ -20,6 +21,9 @@ const present = (d) => ({
   isActive: d.isActive,
   stockLimit: d.stockLimit,
   soldQty: d.soldQty,
+  status: d.status, // PENDING until an admin approves; only APPROVED deals are live
+  rejectReason: d.rejectReason ?? null,
+  reviewedAt: d.reviewedAt ?? null,
   createdAt: d.createdAt,
   updatedAt: d.updatedAt,
   ...(d.listing && {
@@ -27,7 +31,12 @@ const present = (d) => ({
       id: d.listing.id,
       price: d.listing.price,
       shop: d.listing.shop,
-      product: d.listing.product,
+      product: {
+        id: d.listing.product.id,
+        slug: d.listing.product.slug,
+        title: d.listing.product.title,
+        image: d.listing.product.images[0] ?? null,
+      },
     },
   }),
 });
@@ -37,10 +46,15 @@ const listingInclude = {
       id: true,
       price: true,
       shop: { select: { id: true, name: true, slug: true } },
-      product: { select: { id: true, slug: true, title: true } },
+      product: { select: { id: true, slug: true, title: true, images: true } },
     },
   },
 };
+
+// Changing one of these on an APPROVED or REJECTED deal sends it back to the admin (PENDING).
+const REVIEWED_FIELDS = ['dealPrice', 'startsAt', 'endsAt', 'stockLimit'];
+const sameValue = (a, b) =>
+  a instanceof Date || b instanceof Date ? new Date(a).getTime() === new Date(b).getTime() : a === b;
 
 // ---------- public ----------
 
@@ -56,7 +70,7 @@ export async function listFlash({ limit }) {
       JOIN "ShopListing" l ON l.id = d."listingId"
       JOIN "Shop" s ON s.id = l."shopId"
       JOIN "Product" p ON p.id = l."productId"
-      WHERE d."isActive" = true AND d."startsAt" <= now() AND d."endsAt" > now()
+      WHERE d.status = 'APPROVED' AND d."isActive" = true AND d."startsAt" <= now() AND d."endsAt" > now()
         AND (d."stockLimit" IS NULL OR d."soldQty" < d."stockLimit")
         AND d."dealPrice" < l.price
         AND l."isActive" = true AND l.availability <> 'OUT_OF_STOCK'
@@ -101,12 +115,14 @@ function checkDeal({ dealPrice, startsAt, endsAt }, listingPrice) {
   if (endsAt <= new Date()) throw new AppError(400, 'endsAt must be in the future');
 }
 
-// One active deal per listing at a time: no other active deal may overlap this time window.
-async function assertNoOverlap(tx, listingId, { startsAt, endsAt }, exceptId) {
+// One active deal per listing at a time: no other active deal (of these statuses) may overlap this window.
+// Shops: PENDING + APPROVED (a rejected request never blocks a new one). Admin approval: APPROVED only.
+async function assertNoOverlap(tx, listingId, { startsAt, endsAt }, exceptId, statuses = ['PENDING', 'APPROVED']) {
   const other = await tx.flashDeal.findFirst({
     where: {
       listingId,
       isActive: true,
+      status: { in: statuses },
       startsAt: { lt: endsAt },
       endsAt: { gt: startsAt },
       ...(exceptId && { id: { not: exceptId } }),
@@ -133,8 +149,9 @@ export async function create(user, shopId, input) {
     checkDeal(input, listing.price);
     const isActive = input.isActive ?? true;
     if (isActive) await assertNoOverlap(tx, listing.id, input);
+    // always a request, also when an admin uses the shop route: an admin approves it separately
     const d = await tx.flashDeal.create({
-      data: { ...input, isActive, createdById: user.id },
+      data: { ...input, isActive, status: 'PENDING', createdById: user.id },
       include: listingInclude,
     });
     await audit(tx, user.id, 'deal.created', d.id, { shopId, listingId: d.listingId, dealPrice: d.dealPrice });
@@ -156,9 +173,24 @@ export async function update(user, shopId, id, input) {
     const listing = await lockListing(tx, shopId, current.listingId);
     const merged = { ...current, ...input };
     checkDeal(merged, listing.price);
-    if (merged.isActive) await assertNoOverlap(tx, listing.id, merged, id);
-    const d = await tx.flashDeal.update({ where: { id }, data: input, include: listingInclude });
-    await audit(tx, user.id, 'deal.updated', id, { shopId, fields: Object.keys(input) });
+    // a new price, period or stock limit needs a new review; pausing or resuming (isActive) does not
+    const changed = REVIEWED_FIELDS.some((f) => f in input && !sameValue(input[f], current[f]));
+    const backToReview = changed && current.status !== 'PENDING';
+    const statusAfter = backToReview ? 'PENDING' : current.status;
+    if (merged.isActive && statusAfter !== 'REJECTED') await assertNoOverlap(tx, listing.id, merged, id);
+    const d = await tx.flashDeal.update({
+      where: { id },
+      data: {
+        ...input,
+        ...(backToReview && { status: 'PENDING', reviewedById: null, reviewedAt: null, rejectReason: null }),
+      },
+      include: listingInclude,
+    });
+    await audit(tx, user.id, 'deal.updated', id, {
+      shopId,
+      fields: Object.keys(input),
+      ...(backToReview && { status: { from: current.status, to: 'PENDING' } }),
+    });
     return d;
   });
   return present(deal);
@@ -175,17 +207,52 @@ export async function remove(user, shopId, id) {
 
 // ---------- admin ----------
 
-export async function listAll({ page, limit }) {
+// status optional (all). The PENDING queue is oldest request first; everything else latest end first.
+export async function listAll({ status, page, limit }) {
+  const where = status ? { status } : {};
+  const orderBy = status === 'PENDING' ? [{ createdAt: 'asc' }, { id: 'asc' }] : [{ endsAt: 'desc' }, { id: 'asc' }];
   const [rows, total] = await prisma.$transaction([
-    prisma.flashDeal.findMany({
-      include: listingInclude,
-      orderBy: [{ endsAt: 'desc' }, { id: 'asc' }],
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    prisma.flashDeal.count(),
+    prisma.flashDeal.findMany({ where, include: listingInclude, orderBy, skip: (page - 1) * limit, take: limit }),
+    prisma.flashDeal.count({ where }),
   ]);
   return { items: rows.map(present), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+}
+
+// Approve or reject a PENDING request. The listing row is locked first (as shop edits do), so a shop edit,
+// a second admin or a new overlapping deal cannot slip in between the checks and the update.
+export async function review(admin, id, { decision, reason }) {
+  const deal = await prisma.$transaction(async (tx) => {
+    const found = await tx.flashDeal.findUnique({ where: { id }, select: { listingId: true } });
+    if (!found) throw new AppError(404, NOT_FOUND);
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM "ShopListing" WHERE id = ${found.listingId} FOR UPDATE`);
+    const current = await tx.flashDeal.findUnique({ where: { id }, include: { listing: { select: { shopId: true } } } });
+    if (!current) throw new AppError(404, NOT_FOUND);
+    if (current.status !== 'PENDING') throw new AppError(409, 'Only a pending deal can be reviewed');
+
+    const approve = decision === 'APPROVE';
+    if (approve) {
+      if (current.endsAt <= new Date()) throw new AppError(409, 'This deal has already ended');
+      await assertNoOverlap(tx, current.listingId, current, id, ['APPROVED']);
+    }
+    const d = await tx.flashDeal.update({
+      where: { id },
+      data: {
+        status: approve ? 'APPROVED' : 'REJECTED',
+        reviewedById: admin.id,
+        reviewedAt: new Date(),
+        rejectReason: approve ? null : reason,
+      },
+      include: listingInclude,
+    });
+    await audit(tx, admin.id, approve ? 'deal.approved' : 'deal.rejected', id, {
+      shopId: current.listing.shopId,
+      listingId: current.listingId,
+      ...(!approve && { reason }),
+    });
+    return d;
+  });
+  await notifyDealReview(deal); // after the commit, never throws
+  return present(deal);
 }
 
 export async function adminRemove(admin, id) {

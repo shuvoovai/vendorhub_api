@@ -16,6 +16,7 @@ export const SEED_MEDIA_DIR = path.join(SEED_DIR, 'media');
 
 // In foreign-key order. "later": columns that point "forward" (or at the same table); they are written
 // as null first and set in a second pass, once every row exists. key: the primary key (composite for joins).
+// defaults: values for columns that an older export does not have yet.
 export const TABLES = [
   { model: 'user' },
   { model: 'market', later: ['imageId'] },
@@ -32,7 +33,7 @@ export const TABLES = [
   { model: 'shopListing' },
   { model: 'listingVariant' },
   { model: 'banner' },
-  { model: 'flashDeal' },
+  { model: 'flashDeal', defaults: { status: 'APPROVED' } }, // exports made before deal approval: they were live
   { model: 'foodItem' },
   { model: 'tolet' },
 ];
@@ -81,7 +82,7 @@ export async function importSeedData(prisma, uploadDir, { mode = 'missing' } = {
   const deferred = [];
   for (const t of TABLES) {
     if (!(await exists(fileOf(t.model)))) continue;
-    const rows = JSON.parse(await readFile(fileOf(t.model), 'utf8'));
+    const rows = JSON.parse(await readFile(fileOf(t.model), 'utf8')).map((row) => ({ ...t.defaults, ...row }));
     const later = t.later ?? [];
     const first = (row) => ({ ...row, ...Object.fromEntries(later.map((k) => [k, null])) });
     let written = rows;

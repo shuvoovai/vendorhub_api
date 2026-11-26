@@ -2,8 +2,10 @@
 // The price is ALWAYS computed here on the server; a client never sends a price.
 import { Prisma } from '@prisma/client';
 
-// "Running" = active, started, not ended, and (with a stock limit) units left at the deal price.
+// "Running" = approved by an admin, active, started, not ended, and (with a stock limit) units left at
+// the deal price. A PENDING or REJECTED deal never changes a price.
 export const runningDealWhere = (now = new Date()) => ({
+  status: 'APPROVED',
   isActive: true,
   startsAt: { lte: now },
   endsAt: { gt: now },
@@ -67,7 +69,7 @@ export async function claimDealUnits(tx, dealId, quantity) {
     UPDATE "FlashDeal"
        SET "soldQty" = "soldQty" + ${quantity}, "updatedAt" = now()
      WHERE id = ${dealId}
-       AND "isActive" = true AND "startsAt" <= now() AND "endsAt" > now()
+       AND status = 'APPROVED' AND "isActive" = true AND "startsAt" <= now() AND "endsAt" > now()
        AND ("stockLimit" IS NULL OR "soldQty" + ${quantity} <= "stockLimit")`);
   return count === 1;
 }

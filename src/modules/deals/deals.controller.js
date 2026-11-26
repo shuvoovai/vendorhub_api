@@ -21,6 +21,7 @@ export const listAll = async (req, res) => {
   const { items, pagination } = await s.listAll(req.validated);
   res.json({ success: true, data: items, meta: { pagination } });
 };
+export const review = async (req, res) => ok(res, await s.review(req.user, req.params.id, req.body));
 export const adminRemove = async (req, res) => {
   await s.adminRemove(req.user, req.params.id);
   ok(res, { message: 'Deal deleted' });

@@ -7,6 +7,7 @@ import {
   updateDealSchema,
   flashQuery,
   adminDealsQuery,
+  reviewDealSchema,
   shopParams,
   shopDealParams,
   dealParams,
@@ -30,6 +31,7 @@ router.patch('/shops/:shopId/deals/:id', ...shopTeam, params(shopDealParams), va
 router.delete('/shops/:shopId/deals/:id', ...shopTeam, params(shopDealParams), c.remove);
 
 router.get('/admin/deals', ...adminOnly, validateQuery(adminDealsQuery), c.listAll);
+router.patch('/admin/deals/:id/review', ...adminOnly, params(dealParams), validate(reviewDealSchema), c.review);
 router.delete('/admin/deals/:id', ...adminOnly, params(dealParams), c.adminRemove);
 
 export default router;

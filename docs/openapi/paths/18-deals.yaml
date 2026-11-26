@@ -72,10 +72,12 @@ paths:
     post:
       tags: [Shops]
       operationId: ownerCreateDeal
-      summary: Create a flash deal on one of the shop's listings (audited as deal.created)
+      summary: Request a flash deal on one of the shop's listings (status PENDING; audited as deal.created)
       description: >-
-        dealPrice must be lower than the listing price; endsAt after startsAt, at most 7 days later and in
-        the future. At most one active deal per listing in any period (409). A listing of another shop: 404.
+        Always created PENDING (also by an admin through this route); it changes no price until an admin
+        approves it (PATCH /api/v1/admin/deals/{id}/review). dealPrice must be lower than the listing price;
+        endsAt after startsAt, at most 7 days later and in the future. At most one active PENDING or APPROVED
+        deal per listing in any period (409; REJECTED deals do not count). A listing of another shop: 404.
       security:
         - bearerAuth: []
       parameters:
@@ -136,6 +138,10 @@ paths:
       tags: [Shops]
       operationId: ownerUpdateDeal
       summary: Update a deal (same rules as create; audited as deal.updated)
+      description: >-
+        Changing dealPrice, startsAt, endsAt or stockLimit of an APPROVED or REJECTED deal sends it back to
+        PENDING (reviewedAt and rejectReason are cleared) until an admin approves it again. Changing only
+        isActive (pause / resume) keeps the status.
       security:
         - bearerAuth: []
       parameters:
@@ -215,10 +221,15 @@ paths:
     get:
       tags: [Admin]
       operationId: adminListDeals
-      summary: All flash deals (latest end first)
+      summary: Flash deals by review status (PENDING = oldest request first; otherwise latest end first)
       security:
         - bearerAuth: []
       parameters:
+        - name: status
+          in: query
+          description: Omit for all deals.
+          schema:
+            $ref: '#/components/schemas/DealStatus'
         - $ref: '#/components/parameters/Page'
         - name: limit
           in: query
@@ -253,6 +264,53 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/deals/{id}/review:
+    patch:
+      tags: [Admin]
+      operationId: adminReviewDeal
+      summary: Approve or reject a PENDING deal request (audited as deal.approved / deal.rejected; the shop owner is notified)
+      description: >-
+        Only APPROVED deals change a price (flash list, product page, cart, checkout). 409 when the deal is not
+        PENDING, or on APPROVE when it has already ended or overlaps another APPROVED active deal on the listing.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DealId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [APPROVE, REJECT]
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 300
+                  description: Required for REJECT (trimmed; shown to the shop). Ignored for APPROVE.
+      responses:
+        '200':
+          description: The reviewed deal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlashDealResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /api/v1/admin/deals/{id}:
     delete:
@@ -379,9 +437,15 @@ components:
           type: string
           format: uuid
           description: The listing the deal is on (open /products/{slug}?listingId= to buy at the deal price).
+    DealStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED]
+      description: A shop's deal is a request (PENDING) until an admin approves it; only APPROVED deals are live.
     FlashDeal:
       type: object
-      required: [id, listingId, dealPrice, startsAt, endsAt, isActive, stockLimit, soldQty, createdAt, updatedAt, listing]
+      required:
+        [id, listingId, dealPrice, startsAt, endsAt, isActive, stockLimit, soldQty, status, rejectReason, reviewedAt,
+         createdAt, updatedAt, listing]
       properties:
         id:
           type: string
@@ -404,6 +468,16 @@ components:
           nullable: true
         soldQty:
           type: integer
+        status:
+          $ref: '#/components/schemas/DealStatus'
+        rejectReason:
+          type: string
+          nullable: true
+          description: The admin's reason, only for REJECTED.
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -432,7 +506,7 @@ components:
                   type: string
             product:
               type: object
-              required: [id, slug, title]
+              required: [id, slug, title, image]
               properties:
                 id:
                   type: string
@@ -441,6 +515,10 @@ components:
                   type: string
                 title:
                   type: string
+                image:
+                  type: string
+                  nullable: true
+                  description: The product's first image.
     FlashDealResponse:
       type: object
       required: [success, data]

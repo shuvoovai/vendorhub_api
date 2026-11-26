@@ -38,9 +38,18 @@ export const flashQuery = z.object({
 });
 
 export const adminDealsQuery = z.object({
+  status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
+
+// an admin's decision on a PENDING deal; a rejection must say why (the shop sees the reason)
+export const reviewDealSchema = z
+  .strictObject({
+    decision: z.enum(['APPROVE', 'REJECT']),
+    reason: z.string().trim().min(5).max(300).optional(),
+  })
+  .refine((o) => o.decision !== 'REJECT' || o.reason, { message: 'A reason is required to reject a deal', path: ['reason'] });
 
 const uuid = z.string().uuid();
 export const shopParams = z.object({ shopId: uuid });

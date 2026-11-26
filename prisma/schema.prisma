@@ -147,6 +147,7 @@ model User {
   returnRequests      ReturnRequest[]
   returnMessages      ReturnMessage[]
   flashDealsCreated   FlashDeal[]          @relation("FlashDealCreator")
+  flashDealsReviewed  FlashDeal[]          @relation("FlashDealReviewer")
   foodOrders          FoodOrder[]
   tolets              Tolet[]              @relation("ToletSubmitter")
   toletsReviewed      Tolet[]              @relation("ToletReviewer")
@@ -782,25 +783,38 @@ model Banner {
   @@index([isActive, sortOrder])
 }
 
+// A shop REQUESTS a flash deal (PENDING); an admin approves or rejects it. Only APPROVED deals are live.
+enum DealStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // Flash deal: a temporary lower price on one shop listing. The price is applied by the server
-// (cart and checkout) only while the deal is running; at most one active deal per listing.
+// (cart and checkout) only while the deal is APPROVED and running; at most one active deal per listing.
 model FlashDeal {
-  id          String      @id @default(uuid())
-  listingId   String
-  dealPrice   Int // BDT, lower than the listing price
-  startsAt    DateTime
-  endsAt      DateTime
-  isActive    Boolean     @default(true)
-  stockLimit  Int? // units sold at the deal price; null = no limit
-  soldQty     Int         @default(0)
-  createdById String
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  listing     ShopListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  createdBy   User        @relation("FlashDealCreator", fields: [createdById], references: [id])
+  id           String      @id @default(uuid())
+  listingId    String
+  dealPrice    Int // BDT, lower than the listing price
+  startsAt     DateTime
+  endsAt       DateTime
+  isActive     Boolean     @default(true)
+  stockLimit   Int? // units sold at the deal price; null = no limit
+  soldQty      Int         @default(0)
+  createdById  String
+  status       DealStatus  @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
+  rejectReason String?     @db.VarChar(300)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  listing      ShopListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  createdBy    User        @relation("FlashDealCreator", fields: [createdById], references: [id])
+  reviewedBy   User?       @relation("FlashDealReviewer", fields: [reviewedById], references: [id])
 
   @@index([listingId])
   @@index([isActive, endsAt])
+  @@index([status, endsAt])
 }
 
 // ───────────── FOOD CORNER (vendors only) ─────────────

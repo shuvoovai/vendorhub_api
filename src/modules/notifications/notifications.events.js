@@ -229,6 +229,27 @@ export async function notifyBargain(bargainId, kind, actor) {
   }
 }
 
+// ---------- flash deals ----------
+
+// An admin approved or rejected a shop's deal request: the shop owner hears about it.
+export async function notifyDealReview(deal) {
+  try {
+    const shop = await prisma.shop.findUnique({ where: { id: deal.listing.shop.id }, select: { ownerId: true } });
+    if (!shop) return;
+    const approved = deal.status === 'APPROVED';
+    await notify([shop.ownerId], {
+      type: approved ? 'DEAL_APPROVED' : 'DEAL_REJECTED',
+      title: approved ? 'Flash deal approved' : `Flash deal rejected: ${deal.rejectReason}`,
+      body: approved
+        ? `${deal.listing.product.title} at ${deal.dealPrice} BDT goes live at the start time.`
+        : `${deal.listing.product.title} at ${deal.dealPrice} BDT. Change the deal to ask again.`,
+      data: { shopId: deal.listing.shop.id, dealId: deal.id, listingId: deal.listingId },
+    });
+  } catch (err) {
+    logger.error(err, 'could not send the flash deal notification');
+  }
+}
+
 // ---------- verification ----------
 
 // kind: submitted, resubmitted (to admins); approved, correction, rejected, revoked (to the shop owner).

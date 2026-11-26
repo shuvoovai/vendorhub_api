@@ -19,7 +19,7 @@ const DISCOUNTS = [0.85, 0.8, 0.9, 0.75]; // deal price as a share of the listin
 
 try {
   const now = new Date();
-  const running = await prisma.flashDeal.count({ where: { isActive: true, startsAt: { lte: now }, endsAt: { gt: now } } });
+  const running = await prisma.flashDeal.count({ where: { status: 'APPROVED', isActive: true, startsAt: { lte: now }, endsAt: { gt: now } } });
   if (running >= HOURS.length) {
     console.log(`${running} flash deals are already running; nothing to do.`);
     process.exit(0);
@@ -56,7 +56,8 @@ try {
     const endsAt = new Date(now.getTime() + HOURS[i] * 60 * 60 * 1000);
     await prisma.$transaction(async (tx) => {
       const d = await tx.flashDeal.create({
-        data: { listingId: l.id, dealPrice, startsAt: new Date(now.getTime() - 60 * 1000), endsAt, createdById: l.shop.ownerId },
+        // demo data: approved at once (no admin review), so the home page shows them
+        data: { listingId: l.id, dealPrice, startsAt: new Date(now.getTime() - 60 * 1000), endsAt, createdById: l.shop.ownerId, status: 'APPROVED', reviewedAt: now },
       });
       await tx.auditLog.create({
         data: { actorId: l.shop.ownerId, action: 'deal.created', entityType: 'FlashDeal', entityId: d.id, meta: { listingId: l.id, dealPrice, source: 'seed-flash-deals' } },
