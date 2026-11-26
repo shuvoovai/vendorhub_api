@@ -9,6 +9,7 @@ const router = Router();
 
 // authenticate is applied per route (not router.use) because this router is mounted at /api/v1,
 // and router.use would turn every unknown /api/v1 path into a 401 instead of a 404.
+router.get('/payment-options', c.paymentOptions); // public: where to send bKash / Nagad money
 router.post('/checkout', authenticate, requireVerifiedEmail, validate(checkoutSchema), c.checkout);
 router.get('/checkouts/:checkoutId', authenticate, c.getCheckout);
 router.get('/orders', authenticate, validateQuery(listOrdersQuery), c.listOrders);

@@ -383,7 +383,7 @@ paths:
       tags: [Orders]
       operationId: checkout
       summary: Place the whole cart - one independent order per shop, in one transaction
-      description: Every shop in the cart needs one choice. Delivery needs deliveryAddress (typed) or addressId (a saved address). Prices and stock are checked again; stock is reserved; used bargains are closed; the cart is emptied. Each shop's team is notified about its own order.
+      description: Every shop in the cart needs one choice. Delivery needs deliveryAddress (typed) or addressId (a saved address). BKASH and NAGAD need paymentDetails (send the money to the merchant number from GET /api/v1/payment-options first); every other method must not send it. Prices and stock are checked again; stock is reserved; used bargains are closed; the cart is emptied. Each shop's team is notified about its own order.
       security:
         - bearerAuth: []
       requestBody:
@@ -410,7 +410,9 @@ paths:
                         enum: [STORE_PICKUP, VENDOR_DELIVERY]
                       paymentMethod:
                         type: string
-                        enum: [ONLINE, PAY_AT_STORE, CASH_ON_DELIVERY, BKASH]
+                        enum: [ONLINE, PAY_AT_STORE, CASH_ON_DELIVERY, BKASH, NAGAD]
+                      paymentDetails:
+                        $ref: '#/components/schemas/WalletPaymentDetails'
                       deliveryAddress:
                         type: string
                         minLength: 10
@@ -1812,7 +1814,7 @@ components:
           $ref: '#/components/schemas/OrderStatus'
         paymentMethod:
           type: string
-          enum: [ONLINE, PAY_AT_STORE, CASH_ON_DELIVERY, BKASH]
+          enum: [ONLINE, PAY_AT_STORE, CASH_ON_DELIVERY, BKASH, NAGAD]
         paymentStatus:
           $ref: '#/components/schemas/PaymentStatus'
         deliveryMethod:

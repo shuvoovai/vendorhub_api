@@ -39,6 +39,13 @@ async function anonymiseUser(userId) {
     await tx.idempotencyKey.deleteMany({ where: { userId } }); // stored checkout answers contain addresses
     await tx.fileUpload.deleteMany({ where: { ownerId: userId, purpose: 'PRIVATE_DOCUMENT' } });
     await tx.review.updateMany({ where: { userId }, data: { comment: null } }); // ratings stay; author becomes "Deleted user"
+    // bKash / Nagad: the customer's wallet number goes; amount, status and TrxID stay for the accounts
+    if (checkoutIds.length) {
+      await tx.payment.updateMany({
+        where: { subOrder: { checkoutId: { in: checkoutIds } }, walletNumber: { not: null } },
+        data: { walletNumber: null },
+      });
+    }
     for (const o of orders) {
       // orders are kept (shops need their history); only area + city remain, never the phone
       await tx.subOrder.update({ where: { id: o.id }, data: { deliveryAddress: reduceAddress(o.deliveryAddress) } });

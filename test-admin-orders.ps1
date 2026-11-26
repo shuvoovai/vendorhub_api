@@ -40,6 +40,7 @@ function PlaceOrder($delivery, $payment) {
     Call 'DELETE' '/cart' $cust $null | Out-Null
     Call 'POST' '/cart/items' $cust @{ listingId = $listing.id; quantity = 1 } | Out-Null
     $c = @{ shopId = $shopId; deliveryMethod = $delivery; paymentMethod = $payment }
+    if (@('BKASH', 'NAGAD') -contains $payment) { $c.paymentDetails = @{ walletNumber = '01712345678'; transactionId = 'TRX12345AB' } }
     if ($delivery -eq 'VENDOR_DELIVERY') { $c.deliveryAddress = 'House 12, Road 5, Dhanmondi, Dhaka' }
     return Call 'POST' '/checkout' $cust @{ shops = @($c) }
 }
@@ -55,7 +56,7 @@ Check 'bKash payment method saved' $pick.paymentMethod 'BKASH'
 $r = PlaceOrder 'VENDOR_DELIVERY' 'BKASH'
 Check 'bKash with delivery: 201' $r.status 201
 $del = @($r.json.data.orders)[0]
-Check 'unknown payment method: 400' (PlaceOrder 'STORE_PICKUP' 'NAGAD').status 400
+Check 'unknown payment method: 400' (PlaceOrder 'STORE_PICKUP' 'PAYPAL').status 400
 
 # ---- 2. the vendor may confirm without waiting for the payment ----
 Check 'vendor confirms bKash pickup: 200' (Call 'POST' "/shops/$shopId/orders/$($pick.id)/status" $owner @{ status = 'CONFIRMED' }).status 200
@@ -74,6 +75,8 @@ Check 'the confirmed order is listed' ($null -ne $row) $true
 Check 'item has customer.name' ($row.customer.name -ne $null) $true
 Check 'item has customer.id' ($row.customer.id -ne $null) $true
 Check 'item has shop' ($row.shop.id) $shopId
+Check 'admin sees the bKash wallet number' @($row.payments)[0].walletNumber '01712345678'
+Check 'admin sees the bKash TrxID' @($row.payments)[0].transactionId 'TRX12345AB'
 Check 'meta.pagination present' ($l.json.meta.pagination.total -ge 2) $true
 Check 'status filter' (@((Call 'GET' '/admin/orders?status=CONFIRMED&limit=50' $admin $null).json.data | Where-Object { $_.status -ne 'CONFIRMED' }).Count) 0
 Check 'bad status filter: 400' (Call 'GET' '/admin/orders?status=PLACED' $admin $null).status 400

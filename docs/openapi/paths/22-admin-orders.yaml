@@ -105,8 +105,38 @@ components:
       allOf:
         - $ref: '#/components/schemas/CustomerOrder'
         - type: object
-          required: [customer]
+          required: [customer, payments]
           properties:
+            payments:
+              type: array
+              description: >-
+                Admin only. For BKASH / NAGAD the wallet the customer paid from and the TrxID, to find the
+                money in the merchant account before marking the order PAID. Never in customer or shop answers.
+              items:
+                type: object
+                required: [id, provider, amount, status, walletNumber, transactionId, createdAt]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  provider:
+                    type: string
+                    description: mock | bkash | nagad | manual
+                  amount:
+                    type: integer
+                  status:
+                    $ref: '#/components/schemas/PaymentStatus'
+                  walletNumber:
+                    type: string
+                    nullable: true
+                    example: '01712345678'
+                  transactionId:
+                    type: string
+                    nullable: true
+                    example: 9F3A1B2C4D
+                  createdAt:
+                    type: string
+                    format: date-time
             customer:
               type: object
               required: [id, name, phone]

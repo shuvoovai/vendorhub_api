@@ -1,0 +1,58 @@
+paths:
+  /api/v1/payment-options:
+    get:
+      tags: [Orders]
+      operationId: paymentOptions
+      summary: Where to send bKash / Nagad money (our merchant numbers)
+      description: >-
+        Public. For BKASH and NAGAD the customer sends the order total to this number from their own wallet,
+        then gives the wallet number (and the TrxID if they have it) in paymentDetails at checkout. An admin
+        checks the merchant account and marks the order PAID. null = that wallet is not offered right now.
+        Card payments are ONLINE only, through the gateway's hosted page; card details are never accepted here.
+      responses:
+        '200':
+          description: The merchant numbers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [bkash, nagad]
+                    properties:
+                      bkash:
+                        $ref: '#/components/schemas/WalletMerchant'
+                      nagad:
+                        $ref: '#/components/schemas/WalletMerchant'
+
+components:
+  schemas:
+    WalletMerchant:
+      type: object
+      nullable: true
+      required: [merchantNumber]
+      properties:
+        merchantNumber:
+          type: string
+          example: '01XXXXXXXXX'
+    WalletPaymentDetails:
+      type: object
+      additionalProperties: false
+      description: >-
+        Required for BKASH and NAGAD, not allowed for any other method. Shown only to admins, never logged.
+      required: [walletNumber]
+      properties:
+        walletNumber:
+          type: string
+          pattern: '^01[3-9]\d{8}$'
+          description: The customer's bKash / Nagad number the money was sent from.
+          example: '01712345678'
+        transactionId:
+          type: string
+          pattern: '^[A-Z0-9]{8,12}$'
+          description: The TrxID from the wallet app (lowercase is accepted and stored in uppercase).
+          example: 9F3A1B2C4D

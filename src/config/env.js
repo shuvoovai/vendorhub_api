@@ -10,6 +10,9 @@ const schema = z
     REFRESH_TOKEN_DAYS: z.coerce.number().default(30),
     // true = POST /orders/:id/pay-mock works (stands in for a payment gateway); set false when a real gateway exists
     MOCK_PAYMENTS: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+    // bKash / Nagad: our merchant numbers that customers send the money to (shown at checkout; unset = hidden)
+    BKASH_MERCHANT_NUMBER: z.string().regex(/^01[3-9]\d{8}$/).optional(),
+    NAGAD_MERCHANT_NUMBER: z.string().regex(/^01[3-9]\d{8}$/).optional(),
     // bargaining: how long the other side has to respond, and how long an agreed price stays valid
     BARGAIN_TTL_MINUTES: z.coerce.number().positive().default(30),
     BARGAIN_ACCEPTED_HOURS: z.coerce.number().positive().default(24),

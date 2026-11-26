@@ -35,3 +35,7 @@ export const payMock = async (req, res) => {
   const data = await checkoutService.payMock(req.user.id, req.params.orderId);
   res.json({ success: true, data });
 };
+
+export const paymentOptions = (req, res) => {
+  res.json({ success: true, data: checkoutService.paymentOptions() });
+};

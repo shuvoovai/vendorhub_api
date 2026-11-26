@@ -39,7 +39,9 @@ export function errorHandler(err, req, res, next) {
   if (err.code === 'P2025') {
     return res.status(404).json({ success: false, error: { message: 'Record not found' } });
   }
-  logger.error(err);
+  // Prisma's validation errors quote the whole query, which can hold personal data (addresses, wallet numbers)
+  if (err?.name === 'PrismaClientValidationError') logger.error({ name: err.name }, 'database query validation failed');
+  else logger.error(err);
   res.status(500).json({
     success: false,
     error: {

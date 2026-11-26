@@ -6,6 +6,8 @@ paths:
       summary: Place the whole cart - one independent order per shop; safe to retry with Idempotency-Key
       description: >-
         Every shop in the cart needs one choice. Delivery needs deliveryAddress or addressId.
+        BKASH and NAGAD need paymentDetails (the money goes to the merchant number from
+        GET /api/v1/payment-options); every other method must not send it.
         With the optional header Idempotency-Key (a UUID v4 made by the client for this checkout),
         a repeated request with the same body returns the stored answer (header Idempotent-Replayed
         true) and creates nothing. Keys are per user and kept 24 hours. A failed checkout frees its
@@ -44,7 +46,9 @@ paths:
                         enum: [STORE_PICKUP, VENDOR_DELIVERY]
                       paymentMethod:
                         type: string
-                        enum: [ONLINE, PAY_AT_STORE, CASH_ON_DELIVERY, BKASH]
+                        enum: [ONLINE, PAY_AT_STORE, CASH_ON_DELIVERY, BKASH, NAGAD]
+                      paymentDetails:
+                        $ref: '#/components/schemas/WalletPaymentDetails'
                       deliveryAddress:
                         type: string
                         minLength: 10

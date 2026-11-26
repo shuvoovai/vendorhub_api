@@ -8,6 +8,7 @@ import { variantLabel, basePrice } from '../../lib/variants.js';
 import { notifyNewOrders } from '../notifications/notifications.events.js';
 
 const DELIVERY_FEE = 60; // taka, charged once per shop that delivers
+const WALLET_PROVIDERS = { BKASH: 'bkash', NAGAD: 'nagad' }; // Payment.provider of the mobile wallets
 
 const newOrderNumber = () => {
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -257,9 +258,20 @@ async function placeOrdersInTransaction(userId, { shops: choices }, inTransactio
             ...(c.paymentMethod === 'ONLINE' && {
               payments: { create: [{ provider: 'mock', amount: total, status: 'PENDING' }] },
             }),
-            // bKash: no gateway yet; an admin marks it paid by hand (see src/lib/bkash.js)
-            ...(c.paymentMethod === 'BKASH' && {
-              payments: { create: [{ provider: 'bkash', amount: total, status: 'PENDING' }] },
+            // bKash / Nagad: no gateway yet. The customer sends the money to our merchant number and gives
+            // the wallet (+ TrxID); an admin verifies it and marks the order paid (see src/lib/bkash.js)
+            ...(WALLET_PROVIDERS[c.paymentMethod] && {
+              payments: {
+                create: [
+                  {
+                    provider: WALLET_PROVIDERS[c.paymentMethod],
+                    amount: total,
+                    status: 'PENDING',
+                    walletNumber: c.paymentDetails.walletNumber,
+                    transactionId: c.paymentDetails.transactionId ?? null,
+                  },
+                ],
+              },
             }),
           },
           include: orderInclude,
@@ -356,6 +368,14 @@ export async function payMock(userId, orderId) {
     prisma.subOrder.update({ where: { id: orderId }, data: { paymentStatus: 'PAID' } }),
   ]);
   return getOrder(userId, orderId);
+}
+
+// Where the customer sends bKash / Nagad money (our merchant numbers). null = not offered right now.
+export function paymentOptions() {
+  return {
+    bkash: env.BKASH_MERCHANT_NUMBER ? { merchantNumber: env.BKASH_MERCHANT_NUMBER } : null,
+    nagad: env.NAGAD_MERCHANT_NUMBER ? { merchantNumber: env.NAGAD_MERCHANT_NUMBER } : null,
+  };
 }
 
 // The transaction above saves the orders; the shops and the customer are told only AFTER it has committed.

@@ -81,6 +81,7 @@ enum PaymentMethod {
   PAY_AT_STORE
   CASH_ON_DELIVERY
   BKASH
+  NAGAD
 }
 
 enum PaymentStatus {
@@ -536,15 +537,19 @@ model OrderItem {
 }
 
 model Payment {
-  id          String        @id @default(uuid())
-  subOrderId  String
-  provider    String // "sslcommerz" | "bkash" | "manual"
-  providerRef String?
-  amount      Int
-  status      PaymentStatus @default(PENDING)
-  rawPayload  Json?
-  createdAt   DateTime      @default(now())
-  subOrder    SubOrder      @relation(fields: [subOrderId], references: [id])
+  id            String        @id @default(uuid())
+  subOrderId    String
+  provider      String // "sslcommerz" | "bkash" | "nagad" | "manual"
+  providerRef   String?
+  amount        Int
+  status        PaymentStatus @default(PENDING)
+  rawPayload    Json?
+  // bKash / Nagad sent by hand to our merchant number: the customer's wallet and the TrxID, for the admin
+  // to verify. Admin endpoints only; never logged. Cards never come here (ONLINE, gateway's hosted page).
+  walletNumber  String?       @db.VarChar(11)
+  transactionId String?       @db.VarChar(12)
+  createdAt     DateTime      @default(now())
+  subOrder      SubOrder      @relation(fields: [subOrderId], references: [id])
 
   @@index([subOrderId])
 }

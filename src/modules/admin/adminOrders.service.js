@@ -10,9 +10,27 @@ const visible = { status: { not: 'PLACED' } };
 const include = {
   ...orderInclude,
   checkout: { select: { user: { select: { id: true, name: true, phone: true } } } },
+  // ADMIN ONLY: the wallet + TrxID let the admin find the bKash / Nagad money in the merchant account.
+  // Never in customer or shop answers, never logged.
+  payments: {
+    select: { id: true, provider: true, amount: true, status: true, walletNumber: true, transactionId: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  },
 };
 
-const format = (o) => ({ ...formatOrder(o), customer: o.checkout.user });
+const format = (o) => ({
+  ...formatOrder(o),
+  customer: o.checkout.user,
+  payments: o.payments.map((p) => ({
+    id: p.id,
+    provider: p.provider,
+    amount: p.amount,
+    status: p.status,
+    walletNumber: p.walletNumber ?? null,
+    transactionId: p.transactionId ?? null,
+    createdAt: p.createdAt,
+  })),
+});
 
 const FINAL = ['COMPLETED', 'CANCELLED'];
 
@@ -65,12 +83,14 @@ export async function updateOrder(admin, orderId, { status, paymentStatus }) {
   if (paymentStatus) checkPayment(order, paymentStatus, statusAfter);
 
   await prisma.$transaction(async (tx) => {
-    // the status/payment condition makes a concurrent change fail instead of being overwritten
+    // the status/payment condition makes a concurrent change fail instead of being overwritten.
+    // paymentStatus is written here too: a payment-only change must not send an empty update (count 0).
     const changed = await tx.subOrder.updateMany({
       where: { id: orderId, status: order.status, paymentStatus: order.paymentStatus },
       data: {
         ...(status && { status }),
         ...(status === 'COMPLETED' && { completedAt: new Date() }),
+        ...(paymentStatus && { paymentStatus }),
       },
     });
     if (changed.count !== 1) throw new AppError(409, 'This order just changed. Refresh and try again.');
@@ -78,7 +98,6 @@ export async function updateOrder(admin, orderId, { status, paymentStatus }) {
     if (status === 'CANCELLED') await cancelEffects(tx, order); // restock (+ auto refund for ONLINE)
 
     if (paymentStatus) {
-      await tx.subOrder.update({ where: { id: orderId }, data: { paymentStatus } });
       const moved = await tx.payment.updateMany({
         where: { subOrderId: orderId, status: paymentStatus === 'PAID' ? { in: ['PENDING', 'FAILED'] } : 'PAID' },
         data: { status: paymentStatus },

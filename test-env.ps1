@@ -11,6 +11,8 @@ $env:SEARCH_IMAGE_MODE = 'mock'
 $env:TRYON_MODE = 'mock'
 $env:MAIL_MODE = 'log'
 $env:AUTO_VERIFY_EMAIL_DOMAINS = 'vendorshub.test'
+$env:BKASH_MERCHANT_NUMBER = '01900000001' # test numbers, never a real merchant account
+$env:NAGAD_MERCHANT_NUMBER = '01900000002'
 $env:UPLOAD_RATE_LIMIT_MAX = '60' # the banner suites upload more than 20 files in 10 minutes
 if ($env:DATABASE_URL -notmatch '/vh_test\?') { throw 'test-env.ps1: DATABASE_URL is not the test database' }
 Write-Host 'Test environment: database vh_test, uploads ./uploads-test (the real data is not touched)' -ForegroundColor Cyan
