@@ -11,7 +11,8 @@
     "seed:demo": "node --env-file=.env prisma/seed.js --demo",
     "seed:export": "node --env-file=.env scripts/export-seed.js",
     "seed:import": "node --env-file=.env prisma/seed-import.js",
-    "seed:deals": "node --env-file=.env scripts/seed-flash-deals.mjs"
+    "seed:deals": "node --env-file=.env scripts/seed-flash-deals.mjs",
+    "db:backup": "node scripts/db-backup.mjs"
   },
   "keywords": [],
   "author": "",
