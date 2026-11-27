@@ -24,7 +24,7 @@ Node 22 (ES modules, plain JS), Express 5, Prisma 6, PostgreSQL 16 + pgvector (D
 
 ## Tests
 - Tests run ONLY against the test database `vh_test` + `./uploads-test` (`test-env.ps1`; `run-all-tests.ps1` loads it). Start the API for tests with `. .	est-env.ps1; npm run dev`. Never seed or run tests against `vendors_hub` (real data).
-- PowerShell suites `test-*.ps1`, all run by `run-all-tests.ps1` (reseeds first; `test-security.ps1` must stay LAST). 46 suites, all must pass.
+- PowerShell suites `test-*.ps1`, all run by `run-all-tests.ps1` (reseeds first; `test-security.ps1` must stay LAST). 47 suites, all must pass.
 - Test `.env`: `MAIL_MODE=log`, `TRYON_MODE=mock`, `SEARCH_IMAGE_MODE=mock`, `AUTO_VERIFY_EMAIL_DOMAINS=vendorshub.test`. Never run tests in gemini/smtp mode.
 - Scripts: ASCII only. PowerShell 5.1 quirks: wrap one-item results in `@()`; a WebRequestSession re-sends earlier headers; a hand-made `Cookie` header is dropped; curl joins repeated `--data-binary`.
 - Seed: `npm run seed:export` (DB -> git-ignored `prisma/seed-data/`), `npm run seed` (DELETES all, rebuilds from the export, else demo), `--demo` / `npm run seed:demo` (demo only), `prisma/seed-import.js` (adds missing rows, never deletes; Docker runs it with `--if-empty`). Back up first: `docker exec vendors-hub-db pg_dump -U vendors -Fc vendors_hub` into `backups/` (git-ignored).

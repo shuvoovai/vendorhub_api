@@ -10,7 +10,10 @@ export const listProductsQuery = z.object({
   marketId: z.string().uuid().optional(),
   availableOnly: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   newSinceDays: z.coerce.number().int().min(1).max(60).optional(), // only products added in the last N days
-  sort: z.enum(['newest', 'price_asc', 'price_desc', 'popular']).default('newest'),
+  sort: z.enum(['newest', 'price_asc', 'price_desc', 'popular', 'random']).default('newest'),
+  // sort=random: the same seed (and filters) gives the same order, so pages never repeat or skip a product.
+  // Ignored for the other sorts. Without one the server picks a seed and returns it in meta.seed.
+  seed: z.string().regex(/^[A-Za-z0-9]{1,32}$/, 'seed has 1 to 32 letters and digits').optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(12),
 });

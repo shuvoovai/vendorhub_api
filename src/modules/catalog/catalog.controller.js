@@ -10,8 +10,10 @@ export const brands = async (req, res) => {
 };
 
 export const products = async (req, res) => {
-  const { items, pagination } = await catalogService.listProducts(req.validated);
-  res.json({ success: true, data: items, meta: { pagination } });
+  const { items, pagination, seed } = await catalogService.listProducts(req.validated);
+  // a random order the server picked: the URL does not identify it, so no cache may keep it
+  if (req.validated.sort === 'random' && !req.validated.seed) res.set('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: items, meta: { pagination, ...(seed && { seed }) } });
 };
 
 // Depends on who asks: never stored in a shared cache.

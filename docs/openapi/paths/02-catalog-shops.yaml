@@ -100,9 +100,23 @@ paths:
           in: query
           schema:
             type: string
-            enum: [newest, price_asc, price_desc, popular]
+            enum: [newest, price_asc, price_desc, popular, random]
             default: newest
-          description: popular = units ordered in the last 30 days (cancelled orders excluded), then newest.
+          description: >-
+            popular = units ordered in the last 30 days (cancelled orders excluded), then newest.
+            random = a shuffled order fixed by seed (same seed and filters = same order, so pages never repeat
+            or skip a product).
+        - name: seed
+          in: query
+          description: >-
+            Only for sort=random (ignored otherwise). Without it the server picks one and returns it in meta.seed;
+            send that back for the next pages.
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9]{1,32}$'
+            minLength: 1
+            maxLength: 32
+          example: a1b2c3d4e5f6
         - name: newSinceDays
           in: query
           description: Only products added in the last N days ("New arrivals").
@@ -135,9 +149,14 @@ paths:
                       $ref: '#/components/schemas/ProductCard'
                   meta:
                     type: object
+                    required: [pagination]
                     properties:
                       pagination:
                         $ref: '#/components/schemas/Pagination'
+                      seed:
+                        type: string
+                        description: Only with sort=random; the seed this order used (the one sent, or the server's).
+                        example: a1b2c3d4e5f6
         '400':
           $ref: '#/components/responses/BadRequest'
   /api/v1/products/{slug}:

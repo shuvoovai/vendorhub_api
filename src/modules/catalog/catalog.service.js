@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
@@ -68,6 +69,9 @@ const ORDER_BY = {
   // internal (the following feed): the newest matching listing first
   listed: Prisma.sql`m."listedAt" DESC, fp.id ASC`,
 };
+// sort=random: a shuffle that depends only on the seed (a bound parameter), so every page of one seed
+// uses the same order. id breaks the (practically impossible) md5 ties.
+const randomOrder = (seed) => Prisma.sql`md5(fp.id::text || ${seed}::text), fp.id ASC`;
 
 // Joined only for sort=popular
 const POPULAR_JOIN = Prisma.sql`
@@ -110,6 +114,8 @@ export async function bestListingIds(productIds, extra = []) {
 
 export async function listProducts(query) {
   const { q, category, brand, minPrice, maxPrice, shopId, marketId, availableOnly, newSinceDays, productIds, feed, sort, page, limit } = query;
+  const seed = sort === 'random' ? (query.seed ?? randomBytes(6).toString('hex')) : undefined;
+  const orderBy = sort === 'random' ? randomOrder(seed) : ORDER_BY[sort];
 
   // Product filters, written on Product columns only, so PostgreSQL can use their indexes
   // (trigram index on the title, existing indexes on brandId and categoryId).
@@ -189,7 +195,7 @@ export async function listProducts(query) {
     FROM fp
     JOIN m ON m."productId" = fp.id
     ${sort === 'popular' ? POPULAR_JOIN : Prisma.empty}
-    ORDER BY ${ORDER_BY[sort]}
+    ORDER BY ${orderBy}
     LIMIT ${limit} OFFSET ${offset}`;
 
   // An empty page past the end has no row to carry the total, so it needs one extra count.
@@ -235,7 +241,7 @@ export async function listProducts(query) {
     };
   });
 
-  return { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+  return { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }, ...(seed && { seed }) };
 }
 
 // viewer: from loadViewer(); decides whether each listing's stockQty is sent (else null)
