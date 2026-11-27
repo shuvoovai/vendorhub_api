@@ -4,6 +4,7 @@ import { visibleStockQty } from '../../lib/stockVisibility.js';
 import { AppError } from '../../lib/errors.js';
 import { presentImage } from '../../lib/storage.js';
 import { mergeSocialLinks, presentSocialLinks, sameSocialLinks } from '../../lib/socialLinks.js';
+import { isPro } from '../../lib/plans.js';
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
 async function uniqueShopSlug(name) {
@@ -139,6 +140,7 @@ export async function getShop(slug, userId) {
     socialLinks: presentSocialLinks(shop.socialLinks),
     market: shop.market,
     verification: { level: shop.verificationLevel, lastAuditedAt: shop.lastAuditedAt },
+    isPro: isPro(shop.proUntil), // Pro plan badge (never the paid-until date)
     supportsDelivery: shop.supportsDelivery,
     supportsPickup: shop.supportsPickup,
     returnPolicy: { text: shop.returnPolicy, windowDays: shop.returnWindowDays },
@@ -366,8 +368,8 @@ export async function searchShops({ q, marketId, verifiedOnly, page, limit }) {
   if (verifiedOnly) conds.push(Prisma.sql`s."verificationLevel" <> 'UNVERIFIED'`);
 
   // With q: names that START with q first, then names that only contain it.
-  // Inside each group (and without q): most trusted first, then name A-Z, then id (stable pages).
-  let orderBy = Prisma.sql`s."verificationLevel" DESC, s.name ASC, s.id ASC`;
+  // Inside each group (and without q): most trusted first, then Pro shops, then name A-Z, then id (stable pages).
+  let orderBy = Prisma.sql`s."verificationLevel" DESC, (s."proUntil" IS NOT NULL AND s."proUntil" > now()) DESC, s.name ASC, s.id ASC`;
   if (q) {
     const escaped = escapeLike(q);
     conds.push(Prisma.sql`s.name ILIKE ${`%${escaped}%`} ESCAPE '\\'`);
@@ -408,6 +410,7 @@ export async function searchShops({ q, marketId, verifiedOnly, page, limit }) {
             whatsapp: true,
             socialLinks: true,
             verificationLevel: true,
+            proUntil: true,
             market: { select: { id: true, name: true, slug: true } },
             photos: { where: { isCover: true }, take: 1, select: { url: true, kind: true, verifiedAt: true } },
           },
@@ -446,6 +449,7 @@ export async function searchShops({ q, marketId, verifiedOnly, page, limit }) {
       whatsapp: s.whatsapp,
       socialLinks: presentSocialLinks(s.socialLinks),
       verificationLevel: s.verificationLevel,
+      isPro: isPro(s.proUntil),
       market: s.market,
       coverPhoto: cover ? { url: cover.url, kind: cover.kind, verified: cover.verifiedAt !== null } : null,
       ratingAverage: rating ? round1(rating._avg.rating) : null,

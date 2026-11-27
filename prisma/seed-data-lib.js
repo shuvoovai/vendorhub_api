@@ -4,7 +4,8 @@
 // accounts (emails, phones, bcrypt hashes), so it is git-ignored: copy it to another machine yourself.
 //
 // Never exported: refresh/reset/verification tokens, audit logs, carts, orders, payments, returns, reviews,
-// bargains, notifications, idempotency keys, food orders, to-let inquiries, shop verification cases and their
+// bargains, notifications, idempotency keys, food orders, to-let inquiries, subscription requests (wallet numbers
+// and TrxIDs; a shop's paid Pro period is kept in Shop.proUntil), shop verification cases and their
 // private documents (uploads/private). Vector fingerprints are not exported either: run
 // scripts/backfill-fingerprints.mjs after an import.
 import path from 'node:path';

@@ -250,6 +250,44 @@ export async function notifyDealReview(deal) {
   }
 }
 
+// ---------- subscriptions ----------
+
+// To the admins: a shop owner sent a Pro payment to check. No wallet number or TrxID in notifications.
+export async function notifySubscriptionRequested(shopId, request) {
+  try {
+    const shop = await prisma.shop.findUnique({ where: { id: shopId }, select: { name: true } });
+    if (!shop) return;
+    await notify(await adminIds(), {
+      type: 'SUBSCRIPTION_REQUESTED',
+      title: `Pro request from ${shop.name}`,
+      body: `${request.months} month(s), ${request.amount} BDT by ${request.method === 'BKASH' ? 'bKash' : 'Nagad'}. Check the merchant account.`,
+      data: { shopId, requestId: request.id },
+    });
+  } catch (err) {
+    logger.error(err, 'could not send the subscription request notification');
+  }
+}
+
+// To the shop owner: the admin approved (Pro until ...) or rejected (with the reason) the request.
+export async function notifySubscriptionReview(request, proUntil) {
+  try {
+    const shop = await prisma.shop.findUnique({ where: { id: request.shopId }, select: { ownerId: true } });
+    if (!shop) return;
+    const approved = request.status === 'APPROVED';
+    const until = proUntil ? proUntil.toLocaleDateString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    await notify([shop.ownerId], {
+      type: approved ? 'SUBSCRIPTION_APPROVED' : 'SUBSCRIPTION_REJECTED',
+      title: approved ? 'Pro plan activated' : `Pro request rejected: ${request.rejectReason}`,
+      body: approved
+        ? `${request.months} month(s) of Pro. Your shop is Pro until ${until}.`
+        : 'Check the payment details and send a new request.',
+      data: { shopId: request.shopId, requestId: request.id, status: request.status },
+    });
+  } catch (err) {
+    logger.error(err, 'could not send the subscription review notification');
+  }
+}
+
 // ---------- verification ----------
 
 // kind: submitted, resubmitted (to admins); approved, correction, rejected, revoked (to the shop owner).

@@ -5,6 +5,7 @@ import { thumbFor } from '../../lib/storage.js';
 import { runningDeals } from '../../lib/deals.js';
 import { variantLabel, variantAvailability, basePrice } from '../../lib/variants.js';
 import { visibleStockQty } from '../../lib/stockVisibility.js';
+import { isPro } from '../../lib/plans.js';
 const AVAILABILITY_RANK = { IN_STOCK: 4, AVAILABLE: 3, LIMITED: 2, OUT_OF_STOCK: 1 };
 
 // The "best" availability among a product's listings (used on product cards).
@@ -268,6 +269,7 @@ export async function getProduct(slug, listingId, viewer = null) {
               supportsDelivery: true,
               supportsPickup: true,
               avgResponseMins: true,
+              proUntil: true, // only to compute isPro; never sent
               market: { select: { id: true, name: true, slug: true } },
             },
           },
@@ -323,7 +325,11 @@ export async function getProduct(slug, listingId, viewer = null) {
       availability: variantAvailability(l, v),
     })),
     discountPercent: product.msrp ? Math.round((1 - l.price / product.msrp) * 100) : null,
-    shop: { ...l.shop, rating: ratings.get(l.shop.id) ?? { average: null, count: 0 } },
+    shop: (({ proUntil, ...shop }) => ({
+      ...shop,
+      isPro: isPro(proUntil),
+      rating: ratings.get(l.shop.id) ?? { average: null, count: 0 },
+    }))(l.shop),
   });
 
   // Selected listing: the one in the URL, else the cheapest that is not out of stock

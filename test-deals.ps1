@@ -162,8 +162,15 @@ $uvShop = (Call 'POST' '/shops' $uv @{ name = "Deal Test $stamp"; addressLine = 
 Need $uvShop 'the unverified shop'
 $uvListing = (Call 'POST' "/shops/$uvShop/listings" $uv @{ productId = $listing.productId; price = $price; availability = 'IN_STOCK' }).json.data.id
 Need $uvListing 'the unverified listing'
-$uvDeal = Call 'POST' "/shops/$uvShop/deals" $uv @{ listingId = $uvListing; dealPrice = $dealPrice; startsAt = (Iso (Get-Date).AddMinutes(-1)); endsAt = (Iso (Get-Date).AddHours(2)) }
-Check 'an unverified shop may create a deal' $uvDeal.status 201
+$uvBody = @{ listingId = $uvListing; dealPrice = $dealPrice; startsAt = (Iso (Get-Date).AddMinutes(-1)); endsAt = (Iso (Get-Date).AddHours(2)) }
+# a new shop is on the FREE plan: no flash deals until it is Pro (test-subscriptions.ps1 covers the plans)
+Check 'a FREE shop cannot request a deal: 403' (Call 'POST' "/shops/$uvShop/deals" $uv $uvBody).status 403
+$uvTrx = 'D' + (Get-Date -Format 'HHmmssfff')
+$sub = Call 'POST' "/shops/$uvShop/subscription/requests" $uv @{ plan = 'PRO'; months = 1; method = 'BKASH'; walletNumber = '01711223344'; transactionId = $uvTrx }
+Need ($sub.status -eq 201) 'the Pro request'
+Need ((Call 'PATCH' "/admin/subscriptions/requests/$($sub.json.data.id)/review" $admin @{ decision = 'APPROVE' }).status -eq 200) 'approving Pro'
+$uvDeal = Call 'POST' "/shops/$uvShop/deals" $uv $uvBody
+Check 'an unverified Pro shop may create a deal' $uvDeal.status 201
 Check 'admin approves it' (Approve $uvDeal.json.data.id) 200
 Check 'but it is not on the public list' @(Flash).Count 0
 Check 'admin removes it' (Call 'DELETE' "/admin/deals/$($uvDeal.json.data.id)" $admin $null).status 200

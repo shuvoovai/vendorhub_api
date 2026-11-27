@@ -721,6 +721,7 @@ components:
           format: date-time
     ListingShop:
       type: object
+      required: [isPro]
       properties:
         id:
           type: string
@@ -753,6 +754,9 @@ components:
         avgResponseMins:
           type: integer
           nullable: true
+        isPro:
+          type: boolean
+          description: The shop is on the Pro plan right now (featured badge).
         market:
           allOf:
             - $ref: '#/components/schemas/IdNameSlug'
@@ -987,7 +991,7 @@ components:
           example: https://techzone.example.com/
     Storefront:
       type: object
-      required: [phone, whatsapp, socialLinks]
+      required: [phone, whatsapp, socialLinks, isPro]
       properties:
         id:
           type: string
@@ -1050,6 +1054,9 @@ components:
               type: string
               format: date-time
               nullable: true
+        isPro:
+          type: boolean
+          description: The shop is on the Pro plan right now (featured badge).
         supportsDelivery:
           type: boolean
         supportsPickup:

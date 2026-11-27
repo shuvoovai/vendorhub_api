@@ -78,6 +78,7 @@ components:
         - whatsapp
         - socialLinks
         - verificationLevel
+        - isPro
         - market
         - coverPhoto
         - ratingAverage
@@ -117,6 +118,11 @@ components:
           $ref: '#/components/schemas/ShopSocialLinks'
         verificationLevel:
           $ref: '#/components/schemas/VerificationLevel'
+        isPro:
+          type: boolean
+          description: >-
+            The shop is on the Pro plan right now (featured badge). Pro shops come first among results that
+            are otherwise equal (same name-match group and verification level).
         market:
           type: object
           nullable: true

@@ -1,0 +1,393 @@
+paths:
+  /api/v1/subscription-plans:
+    get:
+      tags: [Subscriptions]
+      operationId: listSubscriptionPlans
+      summary: The vendor plans (FREE and PRO) with their limits and prices
+      description: >-
+        Public. Sent with Cache-Control "public, max-age=300". Prices and limits come from the server config only;
+        a subscription request never takes an amount from the client.
+      responses:
+        '200':
+          description: The plans.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SubscriptionPlan'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/v1/shops/{shopId}/subscription:
+    get:
+      tags: [Subscriptions]
+      operationId: getShopSubscription
+      summary: The shop's plan, Pro end date, listings used and open / last rejected request (shop owner only)
+      description: >-
+        Only the shop's owner (from the session). Staff of the shop get 403; anyone else (also admins) 404.
+        The plan is PRO while the paid period has not ended, else FREE (computed on every read).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubscriptionShopId'
+      responses:
+        '200':
+          description: The subscription state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ShopSubscription'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/shops/{shopId}/subscription/requests:
+    post:
+      tags: [Subscriptions]
+      operationId: createSubscriptionRequest
+      summary: Ask for Pro after paying by bKash / Nagad (shop owner only; audited as subscription.requested)
+      description: >-
+        The owner sends the price of the chosen period (GET /api/v1/subscription-plans) to our merchant number
+        (GET /api/v1/payment-options), then sends the wallet number and TrxID here. amount is taken from the server
+        config for those months. Admins are notified. Rate limited: 20 attempts per hour per user (always on).
+        409 when the shop already has a PENDING request (details.code REQUEST_PENDING) or the TrxID was used before
+        by any subscription request or order wallet payment (details.code TRANSACTION_USED). 400 when the method has
+        no merchant number right now. Staff: 403; anyone else: 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubscriptionShopId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [plan, months, method, walletNumber, transactionId]
+              properties:
+                plan:
+                  type: string
+                  enum: [PRO]
+                months:
+                  type: integer
+                  enum: [1, 3, 6, 12]
+                  description: One of the PRO prices[].months.
+                method:
+                  $ref: '#/components/schemas/SubscriptionMethod'
+                walletNumber:
+                  type: string
+                  pattern: '^01\d{9}$'
+                  example: '01712345678'
+                transactionId:
+                  type: string
+                  pattern: '^[A-Za-z0-9]{8,12}$'
+                  description: The TrxID from the wallet app (stored in uppercase).
+                  example: 9F3A1B2C4D
+      responses:
+        '201':
+          description: The new PENDING request.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/SubscriptionRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/v1/shops/{shopId}/subscription/requests/{id}:
+    delete:
+      tags: [Subscriptions]
+      operationId: withdrawSubscriptionRequest
+      summary: Withdraw a PENDING subscription request (shop owner only; audited as subscription.withdrawn)
+      description: The request is deleted. 409 once an admin has reviewed it; another shop's request 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubscriptionShopId'
+        - $ref: '#/components/parameters/SubscriptionRequestId'
+      responses:
+        '204':
+          description: Withdrawn.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/admin/subscriptions/requests:
+    get:
+      tags: [Admin]
+      operationId: adminListSubscriptionRequests
+      summary: Subscription requests by status (PENDING = oldest first; otherwise newest first)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Omit for all requests.
+          schema:
+            $ref: '#/components/schemas/SubscriptionRequestStatus'
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: One page of requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminSubscriptionRequest'
+                  meta:
+                    type: object
+                    required: [pagination]
+                    properties:
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/subscriptions/requests/{id}/review:
+    patch:
+      tags: [Admin]
+      operationId: adminReviewSubscriptionRequest
+      summary: Approve or reject a PENDING subscription request (audited; the shop owner is notified)
+      description: >-
+        APPROVE (one transaction): the request becomes APPROVED and the shop's Pro period is extended by the paid
+        calendar months (Asia/Dhaka) from the current end while the shop is still Pro, else from now. REJECT needs a
+        reason (3-300 characters, trimmed; shown to the owner). 409 when the request is not PENDING.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubscriptionRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [decision]
+                  properties:
+                    decision:
+                      type: string
+                      enum: [APPROVE]
+                - type: object
+                  additionalProperties: false
+                  required: [decision, reason]
+                  properties:
+                    decision:
+                      type: string
+                      enum: [REJECT]
+                    reason:
+                      type: string
+                      minLength: 3
+                      maxLength: 300
+      responses:
+        '200':
+          description: The reviewed request.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/AdminSubscriptionRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  parameters:
+    SubscriptionShopId:
+      name: shopId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SubscriptionRequestId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    PlanCode:
+      type: string
+      enum: [FREE, PRO]
+    SubscriptionMethod:
+      type: string
+      enum: [BKASH, NAGAD]
+    SubscriptionRequestStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED]
+    SubscriptionPlan:
+      type: object
+      required: [code, maxListings, flashDeals, featuredBadge, prices]
+      properties:
+        code:
+          $ref: '#/components/schemas/PlanCode'
+        maxListings:
+          type: integer
+          nullable: true
+          description: Active listings allowed; null = unlimited.
+        flashDeals:
+          type: boolean
+          description: May request flash deals.
+        featuredBadge:
+          type: boolean
+          description: Shown with isPro on public shop answers and sorted first among equal search results.
+        prices:
+          type: array
+          description: Empty for FREE.
+          items:
+            type: object
+            required: [months, amount]
+            properties:
+              months:
+                type: integer
+              amount:
+                type: integer
+                description: BDT.
+    SubscriptionRequest:
+      type: object
+      description: walletNumber and transactionId are shown only to the shop owner and admins.
+      required: [id, plan, months, amount, method, walletNumber, transactionId, status, rejectReason, createdAt, reviewedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        plan:
+          type: string
+          enum: [PRO]
+        months:
+          type: integer
+        amount:
+          type: integer
+          description: BDT, from the server config at request time.
+        method:
+          $ref: '#/components/schemas/SubscriptionMethod'
+        walletNumber:
+          type: string
+        transactionId:
+          type: string
+        status:
+          $ref: '#/components/schemas/SubscriptionRequestStatus'
+        rejectReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+    AdminSubscriptionRequest:
+      allOf:
+        - $ref: '#/components/schemas/SubscriptionRequest'
+        - type: object
+          required: [shop]
+          properties:
+            shop:
+              type: object
+              required: [id, name, slug]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                slug:
+                  type: string
+    ShopSubscription:
+      type: object
+      required: [plan, currentPeriodEnd, listingsUsed, pendingRequest, lastRejected]
+      properties:
+        plan:
+          $ref: '#/components/schemas/PlanCode'
+        currentPeriodEnd:
+          type: string
+          format: date-time
+          nullable: true
+          description: When Pro ends; null on FREE.
+        listingsUsed:
+          type: integer
+          description: The shop's active listings.
+        pendingRequest:
+          allOf:
+            - $ref: '#/components/schemas/SubscriptionRequest'
+          nullable: true
+        lastRejected:
+          allOf:
+            - $ref: '#/components/schemas/SubscriptionRequest'
+          nullable: true
+          description: The newest REJECTED request, only when it is newer than the newest APPROVED one.

@@ -2,6 +2,7 @@ import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { assertShopAccess } from '../../lib/shopAccess.js';
 import { checkVariants, deriveAvailability } from '../../lib/variants.js';
+import { assertCanAddListing } from '../../lib/plans.js';
 
 export { deriveAvailability };
 
@@ -97,6 +98,7 @@ export async function createListing(user, shopId, input) {
   };
 
   const listing = await prisma.$transaction(async (tx) => {
+    await assertCanAddListing(tx, shopId); // FREE plan: at most maxListings active listings (403 PLAN_LIMIT)
     // A previously removed listing is re-activated instead of creating a duplicate
     const l = existing
       ? await tx.shopListing.update({ where: { id: existing.id }, data: { ...data, isActive: true } })
@@ -121,6 +123,8 @@ export async function updateListing(user, shopId, listingId, input) {
     data.availability = deriveAvailability(fields.stockQty);
   }
   const updated = await prisma.$transaction(async (tx) => {
+    // re-activating counts against the plan's listing limit; existing active listings are never touched
+    if (fields.isActive === true && !listing.isActive) await assertCanAddListing(tx, shopId);
     const l = await tx.shopListing.update({ where: { id: listingId }, data });
     return syncVariants(tx, l, { variantOptions, variants });
   });

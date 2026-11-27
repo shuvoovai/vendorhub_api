@@ -131,26 +131,28 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  refreshTokens       RefreshToken[]
-  ownedShops          Shop[]               @relation("ShopOwner")
-  staffOf             ShopStaff[]
-  addresses           Address[]
-  cart                Cart?
-  checkouts           CheckoutSession[]
-  bargains            Bargain[]
-  reviews             Review[]
-  follows             ShopFollow[]
-  auditLogs           AuditLog[]
-  passwordResetTokens PasswordResetToken[]
-  notifications       Notification[]
-  fileUploads         FileUpload[]
-  returnRequests      ReturnRequest[]
-  returnMessages      ReturnMessage[]
-  flashDealsCreated   FlashDeal[]          @relation("FlashDealCreator")
-  flashDealsReviewed  FlashDeal[]          @relation("FlashDealReviewer")
-  foodOrders          FoodOrder[]
-  tolets              Tolet[]              @relation("ToletSubmitter")
-  toletsReviewed      Tolet[]              @relation("ToletReviewer")
+  refreshTokens        RefreshToken[]
+  ownedShops           Shop[]                @relation("ShopOwner")
+  staffOf              ShopStaff[]
+  addresses            Address[]
+  cart                 Cart?
+  checkouts            CheckoutSession[]
+  bargains             Bargain[]
+  reviews              Review[]
+  follows              ShopFollow[]
+  auditLogs            AuditLog[]
+  passwordResetTokens  PasswordResetToken[]
+  notifications        Notification[]
+  fileUploads          FileUpload[]
+  returnRequests       ReturnRequest[]
+  returnMessages       ReturnMessage[]
+  flashDealsCreated    FlashDeal[]           @relation("FlashDealCreator")
+  flashDealsReviewed   FlashDeal[]           @relation("FlashDealReviewer")
+  subscriptionRequests SubscriptionRequest[] @relation("SubscriptionRequester")
+  subscriptionReviews  SubscriptionRequest[] @relation("SubscriptionReviewer")
+  foodOrders           FoodOrder[]
+  tolets               Tolet[]               @relation("ToletSubmitter")
+  toletsReviewed       Tolet[]               @relation("ToletReviewer")
 }
 
 model RefreshToken {
@@ -228,19 +230,22 @@ model Shop {
   createdAt              DateTime          @default(now())
   updatedAt              DateTime          @updatedAt
 
-  owner            User               @relation("ShopOwner", fields: [ownerId], references: [id])
-  market           Market?            @relation(fields: [marketId], references: [id])
-  staff            ShopStaff[]
-  foodOrders       FoodOrder[]
-  verifications    ShopVerification[]
-  listings         ShopListing[]
-  createdProducts  Product[]          @relation("ShopCreatedProducts")
-  subOrders        SubOrder[]
-  reviews          Review[]
-  followers        ShopFollow[]
-  photos           ShopPhoto[]
-  returnPolicy     String?
-  returnWindowDays Int                @default(7)
+  owner                User                  @relation("ShopOwner", fields: [ownerId], references: [id])
+  market               Market?               @relation(fields: [marketId], references: [id])
+  staff                ShopStaff[]
+  foodOrders           FoodOrder[]
+  verifications        ShopVerification[]
+  listings             ShopListing[]
+  createdProducts      Product[]             @relation("ShopCreatedProducts")
+  subOrders            SubOrder[]
+  reviews              Review[]
+  followers            ShopFollow[]
+  photos               ShopPhoto[]
+  returnPolicy         String?
+  returnWindowDays     Int                   @default(7)
+  // Pro plan paid until (src/config/plans.js). The plan is PRO while proUntil > now, else FREE; null = never paid.
+  proUntil             DateTime?
+  subscriptionRequests SubscriptionRequest[]
 
   @@index([marketId])
   @@index([verificationLevel])
@@ -945,4 +950,44 @@ model ToletInquiry {
   @@index([status, createdAt])
   @@index([submitterIpHash, createdAt])
   @@index([toletId])
+}
+
+// ───────────── VENDOR SUBSCRIPTIONS (FREE / PRO) ─────────────
+
+enum SubscriptionMethod {
+  BKASH
+  NAGAD
+}
+
+enum SubscriptionRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// A shop owner paid for Pro by bKash / Nagad to our merchant number and asks an admin to check it.
+// amount comes from src/config/plans.js at request time (never from the client). walletNumber and
+// transactionId: the owner and admins only; never logged. Withdrawn requests are deleted.
+model SubscriptionRequest {
+  id            String                    @id @default(uuid())
+  shopId        String
+  plan          String                    @default("PRO") // "PRO"
+  months        Int
+  amount        Int // BDT
+  method        SubscriptionMethod
+  walletNumber  String                    @db.VarChar(11)
+  transactionId String                    @unique @db.VarChar(12) // stored uppercase
+  status        SubscriptionRequestStatus @default(PENDING)
+  rejectReason  String?                   @db.VarChar(300)
+  requestedById String
+  reviewedById  String?
+  reviewedAt    DateTime?
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  shop          Shop                      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  requestedBy   User                      @relation("SubscriptionRequester", fields: [requestedById], references: [id])
+  reviewedBy    User?                     @relation("SubscriptionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([shopId, status])
+  @@index([status, createdAt])
 }

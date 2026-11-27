@@ -4,6 +4,7 @@ import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { uniqueSlug } from '../../lib/slug.js';
 import { assertShopAccess } from '../../lib/shopAccess.js';
+import { assertCanAddListing } from '../../lib/plans.js';
 import { deriveAvailability } from '../listings/listings.service.js';
 import { fingerprintProductTitles, inBackground } from '../../lib/fingerprints.js';
 const DAILY_LIMIT = 20;
@@ -115,6 +116,7 @@ export async function createShopProduct(user, shopId, input) {
   const slug = await uniqueSlug('product', input.title); // made once, never changes
   const l = input.listing;
   const { product, listing } = await prisma.$transaction(async (tx) => {
+    await assertCanAddListing(tx, shopId); // the new product comes with an active listing (403 PLAN_LIMIT)
     const product = await tx.product.create({
       data: {
         title: input.title,

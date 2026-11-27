@@ -67,6 +67,7 @@ const slugify = (s) =>
 // Children first, parents last (foreign keys point child -> parent)
 async function clean() {
   await prisma.$transaction([
+        prisma.subscriptionRequest.deleteMany(),
         prisma.idempotencyKey.deleteMany(),
         prisma.emailVerificationToken.deleteMany(),
         prisma.foodOrder.deleteMany(),
@@ -213,6 +214,12 @@ async function main() {
     },
   });
   const shops = [techzone, mobileHouse, gadgetGalaxy];
+  // The demo shops each get more than the FREE plan's 20 listings below, so they are Pro for a year
+  // (flash deals, no listing limit). New shops start FREE (src/config/plans.js).
+  await prisma.shop.updateMany({
+    where: { id: { in: shops.map((s) => s.id) } },
+    data: { proUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) },
+  });
 
   await prisma.shopStaff.create({ data: { shopId: techzone.id, userId: owner2.id, title: 'Support' } });
   await prisma.shopFollow.create({ data: { shopId: techzone.id, userId: customer.id } });

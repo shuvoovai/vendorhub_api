@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../lib/errors.js';
 import { assertShopAccess } from '../../lib/shopAccess.js';
+import { assertCanRequestDeals } from '../../lib/plans.js';
 import { listProducts } from '../catalog/catalog.service.js';
 import { notifyDealReview } from '../notifications/notifications.events.js';
 import { MAX_DEAL_DAYS } from './deals.schema.js';
@@ -144,6 +145,7 @@ export async function listForShop(user, shopId) {
 
 export async function create(user, shopId, input) {
   await assertShopAccess(user, shopId);
+  await assertCanRequestDeals(prisma, shopId); // FREE plan: 403 PLAN_REQUIRED
   const deal = await prisma.$transaction(async (tx) => {
     const listing = await lockListing(tx, shopId, input.listingId);
     checkDeal(input, listing.price);
@@ -176,6 +178,8 @@ export async function update(user, shopId, id, input) {
     // a new price, period or stock limit needs a new review; pausing or resuming (isActive) does not
     const changed = REVIEWED_FIELDS.some((f) => f in input && !sameValue(input[f], current[f]));
     const backToReview = changed && current.status !== 'PENDING';
+    // a new price, period or stock limit is a new request: Pro only. Pause / resume stays possible.
+    if (changed) await assertCanRequestDeals(tx, shopId);
     const statusAfter = backToReview ? 'PENDING' : current.status;
     if (merged.isActive && statusAfter !== 'REJECTED') await assertNoOverlap(tx, listing.id, merged, id);
     const d = await tx.flashDeal.update({

@@ -47,6 +47,8 @@ tags:
     description: Food order requests for vendors (shop owners and staff); admins manage the menu and orders
   - name: To-let
     description: Shop-space rental listings anyone can submit; an admin approves them
+  - name: Subscriptions
+    description: Vendor plans (FREE / PRO), a shop owner's Pro payment requests (an admin approves them)
   - name: Profile
     description: My profile and saved addresses
   - name: Staff

@@ -45,6 +45,7 @@ paths:
         Here {slug} is the shop ID (the path is shared with the public storefront list).
         The shop must be active and at least DOCUMENTS_VERIFIED. At most 20 new products per shop per
         24 hours. Brand and category must already exist. Unknown fields are rejected.
+        A FREE shop with as many active listings as its plan allows (GET /api/v1/subscription-plans) gets 403 with details.code PLAN_LIMIT; existing listings are never removed.
       security:
         - bearerAuth: []
       parameters:

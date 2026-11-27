@@ -78,6 +78,8 @@ paths:
         approves it (PATCH /api/v1/admin/deals/{id}/review). dealPrice must be lower than the listing price;
         endsAt after startsAt, at most 7 days later and in the future. At most one active PENDING or APPROVED
         deal per listing in any period (409; REJECTED deals do not count). A listing of another shop: 404.
+        Flash deals need the Pro plan: a FREE shop gets 403 with details.code PLAN_REQUIRED (deals approved
+        earlier keep running until they end; on PATCH, changing price, dates or stock limit is also a request).
       security:
         - bearerAuth: []
       parameters:

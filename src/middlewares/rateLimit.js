@@ -40,3 +40,13 @@ export const uploadLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, error: { message: 'Too many uploads. Please try again later.' } },
 });
+// Subscription payment requests: at most 20 attempts per hour per user. Always on (also in development),
+// so TrxIDs cannot be tried in bulk. Must run AFTER authenticate, because it counts per user.
+export const subscriptionRequestLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  keyGenerator: (req) => `subscription:${req.user.id}`,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, error: { message: 'Too many subscription requests. Please try again later.' } },
+});
